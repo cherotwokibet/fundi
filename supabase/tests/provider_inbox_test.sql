@@ -74,6 +74,25 @@ begin
 end $$;
 reset role;
 
+-- 3b. A mechanic cannot write availability directly, only through
+--     set_my_availability(), so the server clock sets the expiry.
+select pg_temp.as_user('00000000-0000-0000-0000-0000000000a1');
+set role authenticated;
+do $$ begin
+  begin
+    insert into public.availability (provider_id, status, expires_at)
+    values ('10000000-0000-0000-0000-0000000000a1', 'available', now() + interval '30 days');
+    raise exception 'FAIL: mechanic wrote availability directly';
+  exception when insufficient_privilege then null;
+  end;
+  perform public.set_my_availability('available');
+  if (select expires_at from public.availability
+       where provider_id = '10000000-0000-0000-0000-0000000000a1') > now() + interval '4 hours 1 minute' then
+    raise exception 'FAIL: availability expiry not set by the server';
+  end if;
+end $$;
+reset role;
+
 -- 4. Mechanic B and pending mechanic C see nothing and cannot answer it.
 select pg_temp.as_user('00000000-0000-0000-0000-0000000000b1');
 set role authenticated;

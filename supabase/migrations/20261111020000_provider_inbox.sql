@@ -11,8 +11,10 @@ create index service_requests_provider_idx
 
 -- An owner may only cancel their own request, through cancel_my_request().
 -- Before this, the update policy let the owner change other columns too
--- (for example provider_id). Admins keep their own policy.
-drop policy requests_owner_cancel on public.service_requests;
+-- (for example provider_id). Admins keep their own policy. The old rule is
+-- switched off rather than dropped (same effect, no destructive statement).
+alter policy requests_owner_cancel on public.service_requests
+  using (false) with check (false);
 
 create or replace function public.cancel_my_request(p_request uuid)
 returns void

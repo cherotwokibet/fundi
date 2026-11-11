@@ -42,9 +42,14 @@ Database: five migrations in `supabase/migrations/`. The access rules are tested
 local Postgres with a stand-in for Supabase auth and storage: `supabase/tests/run.sh`
 (the inbox rules have their own SQL test file).
 
-**Not yet proven:** nothing has run against a real Supabase project (SMS sign-in, storage
-uploads, signed links for documents, photos and voice notes), voice-note playback has not
-been heard on a real phone, and no Android or iOS build has been made.
+**Supabase project:** `lfgpmngtlypwyvpqytrz` (Frankfurt, free plan), URL
+`https://lfgpmngtlypwyvpqytrz.supabase.co`. All five migrations applied on 11 Nov 2026 and
+the access rules checked in the live database. No data in it yet. The public key is passed
+with `--dart-define`; it is not stored in the repo.
+
+**Not yet proven:** the app has not yet run against the live project (anonymous and SMS
+sign-in, storage uploads, signed links for documents, photos and voice notes), voice-note
+playback has not been heard on a real phone, and no Android or iOS build has been made.
 
 **Known gaps:** a passed-on request is not re-matched automatically yet (an admin can re-send it
 in the database). Owners give no phone number, so the mechanic waits for the owner's call.
@@ -53,7 +58,8 @@ Nothing limits how many requests a guest can send.
 **Next build items:** Phase 2, starting with owner phone sign-in and live matching
 (re-send a passed-on request to the next best match).
 
-**Waiting on the owner of the project:** create the Supabase project, pick the brand name
+**Waiting on the owner of the project:** in Supabase, turn on anonymous sign-ins and phone
+sign-in with an SMS provider, and make the first admin; pick the brand name
 and package ID, test on a real Android phone, run the owner and mechanic interviews,
 choose launch zones, register with the Data Protection Commissioner.
 
