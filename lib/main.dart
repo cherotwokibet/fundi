@@ -4,6 +4,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 
 import 'data/account_repository.dart';
 import 'data/admin_repository.dart';
+import 'data/inbox_repository.dart';
 import 'data/provider_repository.dart';
 import 'state/app_state.dart';
 import 'ui/home_screen.dart';
@@ -36,6 +37,9 @@ Future<void> main() async {
           ),
           adminProvider.overrideWithValue(
             SupabaseAdminRepository(Supabase.instance.client),
+          ),
+          inboxRepositoryProvider.overrideWithValue(
+            SupabaseInboxRepository(Supabase.instance.client),
           ),
           sampleModeProvider.overrideWithValue(false),
         ],

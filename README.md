@@ -62,11 +62,26 @@ Never put the `service_role` key in the app.
 
 - Find me a mechanic accepts an optional photo and a voice note (up to 60
   seconds), stored privately; only the sender, the assigned mechanic and admins
-  can open them. The mechanic-side screen to play them is not built yet.
+  can open them.
+
+- Mechanic inbox: an approved mechanic sees the requests sent to them, newest
+  first, with the note, photo and voice note. They tap **I'll take it** or
+  **I can't take it**. Passing frees the request and the mechanic loses access
+  to its files; it can never be sent back to them. Owners can now only cancel
+  a request, not edit it.
+
+## Test the database rules
+
+`supabase/tests/run.sh` builds a fresh local database (Postgres with PostGIS),
+adds a small stand-in for Supabase auth and storage, applies every migration,
+then runs every `*_test.sql`. Any broken rule stops it with `FAIL: ...`.
+
+```
+supabase/tests/run.sh
+```
 
 ## Not built yet
 
-- Mechanic inbox showing requests with their note, photo and voice note
 - Phone sign-in for owners, quotes, M-Pesa payments, reviews (Phase 2)
 - Mechanic-only parts marketplace (Phase 3)
 
@@ -77,6 +92,6 @@ lib/models/      ServiceProvider and enums
 lib/data/        repositories (Supabase + sample), launch zones
 lib/state/       Riverpod providers, location, matching rules
 lib/ui/          screens and widgets
-supabase/        migration and seed SQL
-test/            ranking and owner-journey tests
+supabase/        migrations, seed SQL, and SQL rule tests
+test/            ranking, owner, mechanic, inbox and admin tests
 ```

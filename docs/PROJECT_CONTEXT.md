@@ -33,18 +33,25 @@ Gates: 90 verified providers live before Phase 2; 300 paid jobs in the pilot bef
 
 ## State of the build (11 Nov 2026)
 
-Built and covered by tests (13 passing), on sample data:
+Built and covered by tests (17 passing), on sample data:
 owner home, browse, tap to call, mechanic profile, find-me best match with optional photo
 and voice note, mechanic phone sign-in, listing application, document upload,
-availability switch, admin console.
+availability switch, admin console, mechanic inbox (note, photo, voice note, take or pass).
 
-Database: four migrations in `supabase/migrations/`, tested on a local Postgres with
-stubbed Supabase auth and storage, including the access rules.
+Database: five migrations in `supabase/migrations/`. The access rules are tested on a
+local Postgres with a stand-in for Supabase auth and storage: `supabase/tests/run.sh`
+(the inbox rules have their own SQL test file).
 
 **Not yet proven:** nothing has run against a real Supabase project (SMS sign-in, storage
-uploads, signed document links), and no Android or iOS build has been made.
+uploads, signed links for documents, photos and voice notes), voice-note playback has not
+been heard on a real phone, and no Android or iOS build has been made.
 
-**Next build items:** mechanic inbox (see requests with note, photo, voice note), then Phase 2.
+**Known gaps:** a passed-on request is not re-matched automatically yet (an admin can re-send it
+in the database). Owners give no phone number, so the mechanic waits for the owner's call.
+Nothing limits how many requests a guest can send.
+
+**Next build items:** Phase 2, starting with owner phone sign-in and live matching
+(re-send a passed-on request to the next best match).
 
 **Waiting on the owner of the project:** create the Supabase project, pick the brand name
 and package ID, test on a real Android phone, run the owner and mechanic interviews,
