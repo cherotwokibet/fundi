@@ -44,7 +44,8 @@ local Postgres with a stand-in for Supabase auth and storage: `supabase/tests/ru
 
 **Supabase project:** `lfgpmngtlypwyvpqytrz` (Frankfurt, free plan), URL
 `https://lfgpmngtlypwyvpqytrz.supabase.co`. All five migrations applied on 11 Nov 2026 and
-the access rules checked in the live database. No data in it yet. The public key is passed
+the access rules checked in the live database. No data in it yet. Anonymous sign-ins are on. Phone sign-in uses a development-only mock
+(`mock_send_sms`): codes are stored in `dev_sms_outbox`, not sent. Switch it off before launch. The public key is passed
 with `--dart-define`; it is not stored in the repo.
 
 **Not yet proven:** the app has not yet run against the live project (anonymous and SMS
@@ -58,8 +59,8 @@ Nothing limits how many requests a guest can send.
 **Next build items:** Phase 2, starting with owner phone sign-in and live matching
 (re-send a passed-on request to the next best match).
 
-**Waiting on the owner of the project:** in Supabase, turn on anonymous sign-ins and phone
-sign-in with an SMS provider, and make the first admin; pick the brand name
+**Waiting on the owner of the project:** in Supabase, turn on phone sign-in and the mock
+SMS hook (development only; a real SMS provider before launch), and make the first admin; pick the brand name
 and package ID, test on a real Android phone, run the owner and mechanic interviews,
 choose launch zones, register with the Data Protection Commissioner.
 

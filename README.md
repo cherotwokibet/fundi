@@ -34,9 +34,15 @@ With no keys, the app runs on built-in sample mechanics (a yellow banner says so
 flutter run --dart-define=SUPABASE_URL=https://xxxx.supabase.co --dart-define=SUPABASE_ANON_KEY=xxxx
 ```
 
-5. For mechanic sign-in, turn on **Phone** sign-in and connect an SMS provider
-   (Authentication → Sign In / Providers → Phone). Until then mechanics cannot
-   sign in on the real backend; sample mode accepts any number with code 123456.
+5. For mechanic sign-in, turn on **Phone** sign-in (Authentication → Sign In / Providers → Phone).
+   - **During development** no SMS provider is needed: in Authentication → Auth Hooks, add a
+     **Send SMS** hook of type Postgres, schema `public`, function `mock_send_sms`. Codes are then
+     stored, not sent. Read the latest one in the SQL editor:
+     `select phone, otp, created_at from public.dev_sms_outbox order by created_at desc limit 5;`
+   - **Before launch**, switch that hook off and connect a real SMS provider. While the hook is
+     on, no real person can receive a sign-in code.
+
+   In sample mode (no keys), any number works with code 123456.
 
 Never put the `service_role` key in the app.
 
