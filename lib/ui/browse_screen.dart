@@ -5,6 +5,8 @@ import '../models/service_provider.dart';
 import '../state/app_state.dart';
 import 'location_bar.dart';
 import 'provider_card.dart';
+import 'theme.dart';
+import 'widgets.dart';
 
 enum _Filter { all, mobile, garage }
 
@@ -23,28 +25,31 @@ class _State extends ConsumerState<BrowseScreen> {
   Widget build(BuildContext context) {
     final nearby = ref.watch(nearbyProvider);
     return Scaffold(
-      appBar: AppBar(title: const Text('Mechanics near you')),
+      appBar: AppBar(),
       body: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           const Padding(
-            padding: EdgeInsets.symmetric(horizontal: 12),
-            child: LocationBar(),
+            padding: EdgeInsets.fromLTRB(16, 0, 16, 0),
+            child: ScreenTitle('Mechanics nearby', subtitle: LocationBar()),
           ),
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
-            child: Wrap(
-              spacing: 8,
+          SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            padding: const EdgeInsets.fromLTRB(16, 4, 16, 12),
+            child: Row(
               children: [
                 for (final (f, label) in const [
                   (_Filter.all, 'All'),
                   (_Filter.mobile, 'Comes to you'),
                   (_Filter.garage, 'Garages'),
                 ])
-                  ChoiceChip(
-                    label: Text(label),
-                    selected: filter == f,
-                    onSelected: (_) => setState(() => filter = f),
+                  Padding(
+                    padding: const EdgeInsets.only(right: 8),
+                    child: _FilterChip(
+                      label: label,
+                      selected: filter == f,
+                      onTap: () => setState(() => filter = f),
+                    ),
                   ),
               ],
             ),
@@ -91,6 +96,48 @@ class _State extends ConsumerState<BrowseScreen> {
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+class _FilterChip extends StatelessWidget {
+  const _FilterChip({
+    required this.label,
+    required this.selected,
+    required this.onTap,
+  });
+  final String label;
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: selected ? forest : Colors.white,
+      shape: StadiumBorder(
+        side: BorderSide(color: selected ? forest : hairline),
+      ),
+      child: InkWell(
+        customBorder: const StadiumBorder(),
+        onTap: onTap,
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(minHeight: 48, minWidth: 56),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            child: Center(
+              widthFactor: 1,
+              child: Text(
+                label,
+                style: TextStyle(
+                  color: selected ? Colors.white : ink,
+                  fontWeight: FontWeight.w600,
+                  fontSize: 14,
+                ),
+              ),
+            ),
+          ),
+        ),
       ),
     );
   }

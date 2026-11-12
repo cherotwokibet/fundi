@@ -31,33 +31,44 @@ Every screen is tested against one question: does this make the owner do more?
 
 Gates: 90 verified providers live before Phase 2; 300 paid jobs in the pilot before Phase 3.
 
-## State of the build (11 Nov 2026)
+## State of the build (12 Nov 2026)
 
-Built and covered by tests (17 passing), on sample data:
+Built and covered by tests (26 passing), on sample data:
 owner home, browse, tap to call, mechanic profile, find-me best match with optional photo
 and voice note, mechanic phone sign-in, listing application, document upload,
 availability switch, admin console, mechanic inbox (note, photo, voice note, take or pass).
 
-Database: five migrations in `supabase/migrations/`. The access rules are tested on a
+Owner app redesign (12 Nov): forest green and lime look, main button low on the screen,
+confirm before a request is sent, waiting screen, My repair, safety sheet with emergency
+numbers. Rules are in `docs/DESIGN.md`; the proposal with research is at
+https://claude.ai/artifact/SngcAzUst8vE8KrQKrBQrU. Mechanic and admin screens took the new
+colours but not new layouts.
+
+Database: seven migrations in `supabase/migrations/`. The access rules are tested on a
 local Postgres with a stand-in for Supabase auth and storage: `supabase/tests/run.sh`
-(the inbox rules have their own SQL test file).
+(three SQL test files: inbox rules, mock SMS, owner request status).
 
 **Supabase project:** `lfgpmngtlypwyvpqytrz` (Frankfurt, free plan), URL
-`https://lfgpmngtlypwyvpqytrz.supabase.co`. All five migrations applied on 11 Nov 2026 and
-the access rules checked in the live database. No data in it yet. Anonymous sign-ins are on. Phone sign-in uses a development-only mock
+`https://lfgpmngtlypwyvpqytrz.supabase.co`. All seven migrations applied by 12 Nov 2026 and
+the access rules checked in the live database. It holds test data only: one admin and one test mechanic (Kowino Mechs). Anonymous sign-ins are on. Phone sign-in uses a development-only mock
 (`mock_send_sms`): codes are stored in `dev_sms_outbox`, not sent. Switch it off before launch. The public key is passed
 with `--dart-define`; it is not stored in the repo.
 
-**Not yet proven:** the app has not yet run against the live project (anonymous and SMS
-sign-in, storage uploads, signed links for documents, photos and voice notes), voice-note
-playback has not been heard on a real phone, and no Android or iOS build has been made.
+**Proven on the live project (11 Nov, web):** anonymous and phone sign-in, listing
+application, document upload to private storage, admin approval.
+
+**Not yet proven:** the redesigned owner flow and the inbox against the live project
+(request with photo and voice note, accept, waiting screen), signed links for files,
+voice-note playback on a real phone, any Android or iOS build, and real owners using it
+outdoors.
 
 **Known gaps:** a passed-on request is not re-matched automatically yet (an admin can re-send it
 in the database). Owners give no phone number, so the mechanic waits for the owner's call.
 Nothing limits how many requests a guest can send.
 
-**Next build items:** Phase 2, starting with owner phone sign-in and live matching
-(re-send a passed-on request to the next best match).
+**Next build items:** test the owner flow with five car owners on their own phones; then
+Phase 2, starting with owner phone sign-in and live matching (re-send a passed-on request
+to the next best match).
 
 **Waiting on the owner of the project:** in Supabase, turn on phone sign-in and the mock
 SMS hook (development only; a real SMS provider before launch), and make the first admin; pick the brand name

@@ -42,18 +42,28 @@ flutter run --dart-define=SUPABASE_URL=https://xxxx.supabase.co --dart-define=SU
    - **Before launch**, switch that hook off and connect a real SMS provider. While the hook is
      on, no real person can receive a sign-in code.
 
-   In sample mode (no keys), any number works with code 123456.
+   In sample mode (no keys), any number works with code 123456, and a requested
+   sample mechanic "accepts" after 15 seconds so the waiting screen can be tried.
 
 Never put the `service_role` key in the app.
 
 ## What is built (Phase 1, owner side)
 
-- Home with the two actions; location from GPS or a picked Nairobi zone
-- Browse: verified providers ranked by real availability, then distance; filters
+- Home: one dark card with **Find me a mechanic**, then **Browse and call a
+  mechanic**; location from GPS or a picked Nairobi zone; an **Accident or
+  unsafe location?** link with 999, 112 and Kenya Red Cross 1199
+- Browse: verified providers ranked by real availability, then distance. Each
+  card shows how fresh the status is, what was checked in plain words, the fee
+  and what it covers, and Call
 - Tap to call through the phone dialer; the tap is logged, the call is not
 - Provider profile showing exactly what was verified
-- Find me a mechanic: come to me / go to a garage, optional note, best match
+- Find me a mechanic: come to me / drive to a garage, optional note, best match.
+  Nothing is sent until the owner taps **Request this mechanic**
+- Waiting screen: updates itself when the mechanic accepts or passes; suggests
+  someone else after 5 minutes; the owner can call or cancel at any point
+- **My repair** on the home screen leads back to an open request
 - Stale "Available" shows as "Availability not confirmed"
+- Design rules and colours: `docs/DESIGN.md`
 - Database: tables, `nearby_providers` PostGIS function, row-level security
 - Mechanic side ("I'm a mechanic or garage" on the home screen): phone sign-in,
   listing application, and the Available / Busy / Offline switch. "Available"
@@ -99,5 +109,5 @@ lib/data/        repositories (Supabase + sample), launch zones
 lib/state/       Riverpod providers, location, matching rules
 lib/ui/          screens and widgets
 supabase/        migrations, seed SQL, and SQL rule tests
-test/            ranking, owner, mechanic, inbox and admin tests
+test/            ranking, owner, mechanic, inbox, admin and layout tests
 ```

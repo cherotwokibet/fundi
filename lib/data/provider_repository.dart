@@ -33,6 +33,12 @@ abstract class ProviderRepository {
     Attachment? photo,
     Attachment? voice,
   });
+
+  /// The owner's latest open request, or null. For "My repair".
+  Future<OwnerRequest?> myOpenRequest();
+
+  /// The owner cancels their own request.
+  Future<void> cancelRequest(String requestId);
 }
 
 /// Real backend: Supabase (Postgres + PostGIS).
@@ -121,12 +127,62 @@ class SupabaseProviderRepository implements ProviderRepository {
       'note': (note == null || note.trim().isEmpty) ? null : note.trim(),
     });
   }
+
+  @override
+  Future<OwnerRequest?> myOpenRequest() async {
+    // No session means this device never sent a request.
+    if (_client.auth.currentUser == null) return null;
+    final rows = await _client.rpc('my_open_request') as List;
+    if (rows.isEmpty) return null;
+    return OwnerRequest.fromRow(rows.first as Map<String, dynamic>);
+  }
+
+  @override
+  Future<void> cancelRequest(String requestId) async {
+    await _client.rpc('cancel_my_request', params: {'p_request': requestId});
+  }
 }
 
 /// Built-in sample data, used until Supabase keys are supplied.
 /// Names are marked "Sample" and phone numbers are placeholders.
 class SampleProviderRepository implements ProviderRepository {
+  /// [acceptAfter]: how long until the sample mechanic "accepts" a request,
+  /// so the waiting screen can be tried without a backend. Null = never.
+  SampleProviderRepository({this.acceptAfter = const Duration(seconds: 15)});
+  final Duration? acceptAfter;
+
   final List<({String id, ContactKind kind})> loggedContacts = [];
+  OwnerRequest? _open;
+
+  /// Test hooks: what the sample mechanic does with the open request.
+  void mechanicAccepts() => _open = _copy(_open!, accepted: true);
+  void mechanicPasses() => _open = _copy(_open!, passed: true);
+
+  static OwnerRequest _copy(
+    OwnerRequest r, {
+    bool accepted = false,
+    bool passed = false,
+  }) => OwnerRequest(
+    id: r.id,
+    mode: r.mode,
+    status: accepted ? OwnerRequestStatus.accepted : r.status,
+    createdAt: r.createdAt,
+    respondedAt: accepted || passed ? DateTime.now() : r.respondedAt,
+    hasNote: r.hasNote,
+    hasPhoto: r.hasPhoto,
+    hasVoice: r.hasVoice,
+    providerId: passed ? null : r.providerId,
+    providerName: passed ? null : r.providerName,
+    providerPhone: passed ? null : r.providerPhone,
+    providerIsMobile: r.providerIsMobile,
+    calloutFeeKes: r.calloutFeeKes,
+  );
+
+  // Minutes since each sample mechanic "set" their availability.
+  static const _setMinutesAgo = {
+    's1': 4, 's2': 12, 's3': 300, 's4': 25, 's5': 9, 's6': 31, 's7': 2, //
+  };
+
   final List<RequestMode> requests = [];
 
   /// What the last request carried, for tests.
@@ -310,6 +366,11 @@ class SampleProviderRepository implements ProviderRepository {
         p.copyWith(
           distanceKm:
               (distanceKm(lat, lng, p.lat, p.lng) * 10).roundToDouble() / 10,
+          availabilitySetAt: _setMinutesAgo[p.id] == null
+              ? null
+              : DateTime.now().subtract(
+                  Duration(minutes: _setMinutesAgo[p.id]!),
+                ),
         ),
     ].where((p) => p.distanceKm <= radiusKm).toList()..sort(compareProviders);
     return list;
@@ -337,5 +398,38 @@ class SampleProviderRepository implements ProviderRepository {
   }) async {
     requests.add(mode);
     lastAttachments = (photo: photo != null, voice: voice != null);
+    final p = _all.where((x) => x.id == providerId).firstOrNull;
+    _open = OwnerRequest(
+      id: 'sample-${requests.length}',
+      mode: mode,
+      status: OwnerRequestStatus.waiting,
+      createdAt: DateTime.now(),
+      hasNote: note != null && note.trim().isNotEmpty,
+      hasPhoto: photo != null,
+      hasVoice: voice != null,
+      providerId: p?.id,
+      providerName: p?.name,
+      providerPhone: p?.phone,
+      providerIsMobile: p?.isMobile ?? true,
+      calloutFeeKes: p?.calloutFeeKes,
+    );
+  }
+
+  @override
+  Future<OwnerRequest?> myOpenRequest() async {
+    final r = _open;
+    if (r != null &&
+        !r.accepted &&
+        !r.passed &&
+        acceptAfter != null &&
+        DateTime.now().difference(r.createdAt) >= acceptAfter!) {
+      mechanicAccepts();
+    }
+    return _open;
+  }
+
+  @override
+  Future<void> cancelRequest(String requestId) async {
+    if (_open?.id == requestId) _open = null;
   }
 }

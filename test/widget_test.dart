@@ -13,6 +13,7 @@ import 'package:fundi/data/zones.dart';
 import 'package:fundi/main.dart';
 import 'package:fundi/models/service_provider.dart';
 import 'package:fundi/state/app_state.dart';
+import 'package:fundi/ui/request_status_screen.dart';
 
 void main() {
   final kasarani = zones.first;
@@ -88,7 +89,8 @@ void main() {
     late List<String> dialed;
 
     Future<void> pumpApp(WidgetTester tester) async {
-      repo = SampleProviderRepository();
+      // The sample mechanic only answers when a test tells it to.
+      repo = SampleProviderRepository(acceptAfter: null);
       account = SampleAccountRepository();
       dialed = [];
       tester.view.physicalSize = const Size(1080, 2340);
@@ -119,8 +121,10 @@ void main() {
     testWidgets('home shows the two actions and no login', (tester) async {
       await pumpApp(tester);
       expect(find.text('Find me a mechanic'), findsOneWidget);
-      expect(find.text('Browse and call'), findsOneWidget);
+      expect(find.text('Browse and call a mechanic'), findsOneWidget);
       expect(find.textContaining('Sign in'), findsNothing);
+      // No open request, so no My repair button.
+      expect(find.byKey(const Key('home-my-repair')), findsNothing);
     });
 
     testWidgets('browse then call: two taps open the dialer and log the tap', (
@@ -139,17 +143,60 @@ void main() {
       );
     });
 
-    testWidgets('find me: no category needed, returns a best match', (
-      tester,
-    ) async {
-      await pumpApp(tester);
+    Future<void> findMatch(WidgetTester tester) async {
       await tester.tap(find.byKey(const Key('home-find')));
+      await tester.pumpAndSettle();
+      await tester.scrollUntilVisible(
+        find.byKey(const Key('find-submit')),
+        120,
+        scrollable: find.byType(Scrollable).first,
+      );
       await tester.pumpAndSettle();
       await tester.tap(find.byKey(const Key('find-submit')));
       await tester.pumpAndSettle();
-      expect(find.text('Your best match'), findsOneWidget);
+    }
+
+    testWidgets('find me: no category needed; nothing is sent before the '
+        'owner confirms', (tester) async {
+      await pumpApp(tester);
+      await findMatch(tester);
+      expect(find.text('Your match'), findsOneWidget);
       expect(find.text('Otieno Mobile Mechanic'), findsOneWidget);
+      expect(
+        find.textContaining('Nothing is sent until you tap'),
+        findsOneWidget,
+      );
+      // Seeing the match sends nothing.
+      expect(repo.requests, isEmpty);
+      // Calling is still one tap from here.
+      await tester.tap(find.byKey(const Key('call-s1')));
+      await tester.pump();
+      expect(dialed, ['+254700000001']);
+      expect(repo.requests, isEmpty);
+    });
+
+    testWidgets('find me: confirm sends the request and shows the wait', (
+      tester,
+    ) async {
+      await pumpApp(tester);
+      await findMatch(tester);
+      await tester.tap(find.byKey(const Key('request-mechanic')));
+      await tester.pumpAndSettle();
       expect(repo.requests, [RequestMode.comeToMe]);
+      expect(find.text('Waiting for confirmation'), findsOneWidget);
+      expect(
+        find.text('Otieno Mobile Mechanic has your request.'),
+        findsOneWidget,
+      );
+
+      // The mechanic takes the job; the screen finds out on its next check.
+      repo.mechanicAccepts();
+      await tester.pump(RequestStatusScreen.checkEvery);
+      await tester.pumpAndSettle();
+      expect(find.text('Request accepted'), findsOneWidget);
+      await tester.tap(find.byKey(const Key('status-call')));
+      await tester.pump();
+      expect(dialed, ['+254700000001']);
     });
 
     testWidgets('find me: a photo and a voice note travel with the request', (
@@ -172,15 +219,131 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.text('Photo added'), findsOneWidget);
 
-      await tester.scrollUntilVisible(
-        find.byKey(const Key('find-submit')),
-        200,
-        scrollable: find.byType(Scrollable).last,
-      );
+      await tester.ensureVisible(find.byKey(const Key('find-submit')));
+      await tester.pumpAndSettle();
       await tester.tap(find.byKey(const Key('find-submit')));
       await tester.pumpAndSettle();
-      expect(find.text('Your best match'), findsOneWidget);
+      // The owner is told exactly what will be shared.
+      expect(
+        find.textContaining('your location, 1 photo and 1 voice note'),
+        findsOneWidget,
+      );
+      expect(repo.lastAttachments, isNull);
+      await tester.tap(find.byKey(const Key('request-mechanic')));
+      await tester.pumpAndSettle();
       expect(repo.lastAttachments, (photo: true, voice: true));
+    });
+
+    testWidgets('my repair: get back to the request from home, then cancel', (
+      tester,
+    ) async {
+      await pumpApp(tester);
+      await findMatch(tester);
+      await tester.tap(find.byKey(const Key('request-mechanic')));
+      await tester.pumpAndSettle();
+      await tester.pageBack();
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.byKey(const Key('home-my-repair')));
+      await tester.pumpAndSettle();
+      expect(find.text('Waiting for confirmation'), findsOneWidget);
+
+      await tester.tap(find.byKey(const Key('cancel-request')));
+      await tester.pumpAndSettle();
+      expect(find.text('Find me a mechanic'), findsOneWidget);
+      expect(find.byKey(const Key('home-my-repair')), findsNothing);
+      expect(await repo.myOpenRequest(), isNull);
+    });
+
+    testWidgets('waiting: after 5 minutes, or if the mechanic passes, the '
+        'owner is pointed to someone else', (tester) async {
+      await pumpApp(tester);
+      await findMatch(tester);
+      await tester.tap(find.byKey(const Key('request-mechanic')));
+      await tester.pumpAndSettle();
+      expect(find.text('This screen updates by itself.'), findsOneWidget);
+
+      repo.mechanicPasses();
+      await tester.pump(RequestStatusScreen.checkEvery);
+      await tester.pumpAndSettle();
+      expect(find.text('They can\'t take it'), findsOneWidget);
+      await tester.tap(find.byKey(const Key('status-others')));
+      await tester.pumpAndSettle();
+      expect(find.text('Mechanics nearby'), findsOneWidget);
+    });
+
+    testWidgets('safety: emergency numbers are two taps from home', (
+      tester,
+    ) async {
+      await pumpApp(tester);
+      await tester.tap(find.byKey(const Key('home-safety')));
+      await tester.pumpAndSettle();
+      expect(find.text('Are you safe?'), findsOneWidget);
+      await tester.tap(find.byKey(const Key('sos-999')));
+      await tester.pump();
+      expect(dialed, ['999']);
+    });
+
+    testWidgets('browse card: freshness, checks in words, fee and what it '
+        'covers', (tester) async {
+      await pumpApp(tester);
+      await tester.tap(find.byKey(const Key('home-browse')));
+      await tester.pumpAndSettle();
+      expect(find.text('Available · Updated 4 min ago'), findsOneWidget);
+      expect(find.text('ID, location and experience checked'), findsWidgets);
+      expect(find.text('KES 500'), findsWidgets);
+      expect(find.text('Visit and inspection'), findsWidgets);
+    });
+
+    for (final size in const [Size(320, 568), Size(360, 640), Size(390, 844)]) {
+      testWidgets('layout holds at ${size.width.round()} px wide with text '
+          'at 1.5 times size', (tester) async {
+        await pumpApp(tester);
+        tester.view.physicalSize = size;
+        tester.view.devicePixelRatio = 1;
+        tester.platformDispatcher.textScaleFactorTestValue = 1.5;
+        addTearDown(tester.platformDispatcher.clearTextScaleFactorTestValue);
+        await tester.pumpAndSettle();
+        // Any overflow is thrown as an error by the test framework.
+        expect(tester.takeException(), isNull);
+        await tester.ensureVisible(find.byKey(const Key('home-browse')));
+        await tester.pumpAndSettle();
+        await tester.tap(find.byKey(const Key('home-browse')));
+        await tester.pumpAndSettle();
+        expect(tester.takeException(), isNull);
+        await tester.pageBack();
+        await tester.pumpAndSettle();
+        await tester.ensureVisible(find.byKey(const Key('home-find')));
+        await tester.pumpAndSettle();
+        await findMatch(tester);
+        expect(tester.takeException(), isNull);
+        await tester.scrollUntilVisible(
+          find.byKey(const Key('request-mechanic')),
+          120,
+          scrollable: find.byType(Scrollable).first,
+        );
+        await tester.pumpAndSettle();
+        await tester.tap(find.byKey(const Key('request-mechanic')));
+        await tester.pumpAndSettle();
+        expect(find.text('Waiting for confirmation'), findsOneWidget);
+        expect(tester.takeException(), isNull);
+      });
+    }
+
+    testWidgets('every tappable thing on home is at least 48 px tall', (
+      tester,
+    ) async {
+      await pumpApp(tester);
+      for (final key in [
+        'home-find',
+        'home-browse',
+        'home-safety',
+        'home-provider',
+        'location-bar',
+      ]) {
+        final box = tester.getSize(find.byKey(Key(key)));
+        expect(box.height, greaterThanOrEqualTo(48), reason: key);
+      }
     });
 
     testWidgets('stale availability is never shown as available', (
@@ -201,6 +364,8 @@ void main() {
       tester,
     ) async {
       await pumpApp(tester);
+      await tester.ensureVisible(find.byKey(const Key('home-provider')));
+      await tester.pumpAndSettle();
       await tester.tap(find.byKey(const Key('home-provider')));
       await tester.pumpAndSettle();
 
@@ -303,6 +468,8 @@ void main() {
         ),
       );
       await tester.pumpAndSettle();
+      await tester.ensureVisible(find.byKey(const Key('home-provider')));
+      await tester.pumpAndSettle();
       await tester.tap(find.byKey(const Key('home-provider')));
       await tester.pumpAndSettle();
       expect(find.text('Verification'), findsOneWidget);
@@ -359,6 +526,8 @@ void main() {
           child: const FundiApp(),
         ),
       );
+      await tester.pumpAndSettle();
+      await tester.ensureVisible(find.byKey(const Key('home-provider')));
       await tester.pumpAndSettle();
       await tester.tap(find.byKey(const Key('home-provider')));
       await tester.pumpAndSettle();

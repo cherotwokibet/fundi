@@ -172,6 +172,16 @@ final nearbyProvider = FutureProvider<List<ServiceProvider>>((ref) async {
   return ref.watch(repositoryProvider).nearby(lat: loc.lat, lng: loc.lng);
 });
 
+/// The owner's open request, if any. Bump [requestVersionProvider] to reload.
+final requestVersionProvider = NotifierProvider<VersionNotifier, int>(
+  VersionNotifier.new,
+);
+
+final openRequestProvider = FutureProvider<OwnerRequest?>((ref) {
+  ref.watch(requestVersionProvider);
+  return ref.watch(repositoryProvider).myOpenRequest();
+});
+
 /// Best matches for "Find Me a Mechanic": only providers that can actually
 /// take the job now, in ranked order. Busy and offline providers never match.
 List<ServiceProvider> bestMatches(
