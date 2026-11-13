@@ -31,7 +31,7 @@ Future<String> findNetlify() async {
     if (prefix.isNotEmpty) {
       for (final name in ['netlify.cmd', 'bin/netlify', 'netlify']) {
         final f = File('$prefix${Platform.pathSeparator}$name');
-        if (f.existsSync()) return '"${f.path}"';
+        if (f.existsSync()) return f.path;
       }
     }
   } catch (_) {}
