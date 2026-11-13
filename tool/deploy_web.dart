@@ -18,6 +18,26 @@ Future<int> run(String command, List<String> args) async {
   return p.exitCode;
 }
 
+/// The Netlify CLI. Uses the one on PATH, or finds it in npm's global
+/// folder, which Windows often leaves off PATH.
+Future<String> findNetlify() async {
+  try {
+    final r = await Process.run('npm', [
+      'config',
+      'get',
+      'prefix',
+    ], runInShell: true);
+    final prefix = (r.stdout as String).trim();
+    if (prefix.isNotEmpty) {
+      for (final name in ['netlify.cmd', 'bin/netlify', 'netlify']) {
+        final f = File('$prefix${Platform.pathSeparator}$name');
+        if (f.existsSync()) return '"${f.path}"';
+      }
+    }
+  } catch (_) {}
+  return 'netlify';
+}
+
 Future<void> main(List<String> args) async {
   final file = File('deploy.env');
   if (!file.existsSync()) {
@@ -58,7 +78,7 @@ Future<void> main(List<String> args) async {
 
   // `--draft` publishes a preview link instead of the live site.
   final draft = args.contains('--draft');
-  code = await run('netlify', [
+  code = await run(await findNetlify(), [
     'deploy',
     if (!draft) '--prod',
     '--dir',
