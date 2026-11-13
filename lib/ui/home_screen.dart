@@ -12,7 +12,8 @@ import 'theme.dart';
 import 'widgets.dart';
 
 /// The whole product on one screen: two actions, no login, no categories.
-/// The main button sits low, where a thumb reaches it one-handed.
+/// Phone: one column, with the main button low, in thumb reach.
+/// Wide window (desktop, tablet on its side): two columns.
 class HomeScreen extends ConsumerWidget {
   const HomeScreen({super.key});
 
@@ -26,11 +27,114 @@ class HomeScreen extends ConsumerWidget {
         Navigator.of(context)
             .push(MaterialPageRoute<void>(builder: (_) => screen));
 
+    final header = _Header(
+      hasOpenRequest: open != null,
+      onMyRepair: () => go(const RequestStatusScreen()),
+    );
+    final banner = Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      decoration: BoxDecoration(
+        color: const Color(0xFFFFF3D6),
+        borderRadius: BorderRadius.circular(10),
+      ),
+      child: const Text(
+        'Sample data: these mechanics and numbers are examples.',
+        style: TextStyle(fontSize: 13),
+      ),
+    );
+    final hero = _Hero(onFind: () => go(const FindScreen()));
+    final browse = ActionTile(
+      key: const Key('home-browse'),
+      icon: Icons.call_rounded,
+      title: 'Browse and call',
+      subtitle: 'See mechanics near you and call one',
+      onTap: () => go(const BrowseScreen()),
+    );
+    const trust = Row(
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: [
+        Icon(Icons.verified, size: 16, color: Color(0xFF135C37)),
+        SizedBox(width: 6),
+        Flexible(
+          child: Text(
+            'Every mechanic is ID-checked. No sign-up needed.',
+            style: TextStyle(fontSize: 13, color: muted),
+          ),
+        ),
+      ],
+    );
+    final safety = _SafetyLink(onTap: () => showSafetySheet(context));
+    final mechanic = TextButton(
+      key: const Key('home-provider'),
+      onPressed: () => go(const ProviderArea()),
+      child: const Text('I\'m a mechanic or garage'),
+    );
+
+    if (isWide(context)) {
+      return Scaffold(
+        body: SafeArea(
+          child: SingleChildScrollView(
+            child: Center(
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 1080),
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(32, 12, 32, 16),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      header,
+                      if (sample) ...[const SizedBox(height: 4), banner],
+                      const SizedBox(height: 16),
+                      ConstrainedBox(
+                        // Tall enough to feel like a page, short enough that
+                        // everything fits a laptop window without scrolling.
+                        constraints: BoxConstraints(
+                          minHeight: (MediaQuery.sizeOf(context).height - 250)
+                              .clamp(340.0, 480.0),
+                        ),
+                        child: IntrinsicHeight(
+                          child: Row(
+                            crossAxisAlignment: CrossAxisAlignment.stretch,
+                            children: [
+                              Expanded(flex: 11, child: hero),
+                              const SizedBox(width: 24),
+                              Expanded(
+                                flex: 9,
+                                child: Column(
+                                  crossAxisAlignment:
+                                      CrossAxisAlignment.stretch,
+                                  children: [
+                                    browse,
+                                    const SizedBox(height: 24),
+                                    const _HowItWorks(),
+                                    const SizedBox(height: 16),
+                                    const Spacer(),
+                                    safety,
+                                  ],
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 16),
+                      trust,
+                      Center(child: mechanic),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+    }
+
     return Scaffold(
       body: SafeArea(
         child: Center(
           child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 520),
+            constraints: const BoxConstraints(maxWidth: 560),
             // Fills the screen when there is room; scrolls when the text is
             // large or the phone is small.
             child: LayoutBuilder(
@@ -43,64 +147,17 @@ class HomeScreen extends ConsumerWidget {
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.stretch,
                         children: [
-                          _Header(
-                            hasOpenRequest: open != null,
-                            onMyRepair: () => go(const RequestStatusScreen()),
-                          ),
-                          if (sample) ...[
-                            const SizedBox(height: 4),
-                            Container(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 12,
-                                vertical: 8,
-                              ),
-                              decoration: BoxDecoration(
-                                color: const Color(0xFFFFF3D6),
-                                borderRadius: BorderRadius.circular(10),
-                              ),
-                              child: const Text(
-                                'Sample data: these mechanics and numbers are examples.',
-                                style: TextStyle(fontSize: 13),
-                              ),
-                            ),
-                          ],
+                          header,
+                          if (sample) ...[const SizedBox(height: 4), banner],
                           const SizedBox(height: 8),
-                          Expanded(
-                            child: _Hero(onFind: () => go(const FindScreen())),
-                          ),
+                          Expanded(child: hero),
                           const SizedBox(height: 10),
-                          BigButton(
-                            key: const Key('home-browse'),
-                            kind: ButtonKind.tint,
-                            icon: Icons.call_outlined,
-                            label: 'Browse and call a mechanic',
-                            onPressed: () => go(const BrowseScreen()),
-                          ),
+                          browse,
                           const SizedBox(height: 12),
-                          const Row(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            children: [
-                              Icon(
-                                Icons.verified,
-                                size: 16,
-                                color: Color(0xFF135C37),
-                              ),
-                              SizedBox(width: 6),
-                              Flexible(
-                                child: Text(
-                                  'Every mechanic is ID-checked. No sign-up needed.',
-                                  style: TextStyle(fontSize: 13, color: muted),
-                                ),
-                              ),
-                            ],
-                          ),
+                          trust,
                           const SizedBox(height: 12),
-                          _SafetyLink(onTap: () => showSafetySheet(context)),
-                          TextButton(
-                            key: const Key('home-provider'),
-                            onPressed: () => go(const ProviderArea()),
-                            child: const Text('I\'m a mechanic or garage'),
-                          ),
+                          safety,
+                          mechanic,
                         ],
                       ),
                     ),
@@ -111,6 +168,71 @@ class HomeScreen extends ConsumerWidget {
           ),
         ),
       ),
+    );
+  }
+}
+
+/// Wide layout only: three plain steps, so the page explains itself.
+class _HowItWorks extends StatelessWidget {
+  const _HowItWorks();
+
+  @override
+  Widget build(BuildContext context) {
+    const steps = [
+      'Tell us where the car is. No need to know what\'s wrong.',
+      'We match the nearest checked mechanic who is free now.',
+      'Call, or send a request. You see the fee first.',
+    ];
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text(
+          'HOW IT WORKS',
+          style: TextStyle(
+            color: muted,
+            fontWeight: FontWeight.w700,
+            fontSize: 13,
+            letterSpacing: 1.3,
+          ),
+        ),
+        const SizedBox(height: 8),
+        for (final (i, step) in steps.indexed)
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 6),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Container(
+                  width: 26,
+                  height: 26,
+                  alignment: Alignment.center,
+                  decoration: const BoxDecoration(
+                    color: tint,
+                    shape: BoxShape.circle,
+                  ),
+                  child: Text(
+                    '${i + 1}',
+                    style: const TextStyle(
+                      fontWeight: FontWeight.w700,
+                      fontSize: 13,
+                      color: forest,
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Padding(
+                    padding: const EdgeInsets.only(top: 3),
+                    child: Text(
+                      step,
+                      style: const TextStyle(fontSize: 15, height: 1.35),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+      ],
     );
   }
 }
@@ -225,7 +347,13 @@ class _Hero extends StatelessWidget {
                   ),
                 ),
                 const SizedBox(height: 10),
-                Text('Car trouble?', style: heading(44, color: Colors.white)),
+                Text(
+                  'Car trouble?',
+                  style: heading(
+                    isWide(context) ? 56 : 44,
+                    color: Colors.white,
+                  ),
+                ),
                 const SizedBox(height: 10),
                 const Text(
                   'A checked mechanic nearby will sort it out. You don\'t need to know what\'s wrong.',
@@ -239,14 +367,13 @@ class _Hero extends StatelessWidget {
                 const LocationBar(onDark: true),
                 const Spacer(),
                 const SizedBox(height: 20),
-                SizedBox(
-                  width: double.infinity,
-                  child: BigButton(
-                    key: const Key('home-find'),
-                    label: 'Find me a mechanic',
-                    trailingIcon: Icons.arrow_forward,
-                    onPressed: onFind,
-                  ),
+                ActionTile(
+                  key: const Key('home-find'),
+                  primary: true,
+                  icon: Icons.bolt_rounded,
+                  title: 'Find me a mechanic',
+                  subtitle: 'We pick the nearest one who is free',
+                  onTap: onFind,
                 ),
               ],
             ),

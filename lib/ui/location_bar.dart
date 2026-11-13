@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../data/zones.dart';
 import '../state/app_state.dart';
 import 'theme.dart';
+import 'widgets.dart';
 
 /// Shows where we are searching and lets the owner change it in one tap.
 class LocationBar extends ConsumerWidget {
@@ -67,6 +68,7 @@ class LocationBar extends ConsumerWidget {
 
   void _pick(BuildContext context, WidgetRef ref) {
     showModalBottomSheet<void>(
+      constraints: sheetConstraints,
       context: context,
       showDragHandle: true,
       builder: (sheet) => SafeArea(

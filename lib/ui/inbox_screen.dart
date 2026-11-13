@@ -6,6 +6,7 @@ import '../data/inbox_repository.dart';
 import '../models/service_provider.dart';
 import '../state/app_state.dart';
 import 'theme.dart';
+import 'widgets.dart';
 
 /// Entry on the mechanic's manage screen: how many requests are waiting.
 class InboxEntry extends ConsumerWidget {
@@ -61,41 +62,44 @@ class InboxScreen extends ConsumerWidget {
           ),
         ],
       ),
-      body: requests.when(
-        loading: () => const Center(child: CircularProgressIndicator()),
-        error: (_, _) => Center(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const Text('Could not load your requests.'),
-              const SizedBox(height: 12),
-              FilledButton(
-                onPressed: () => ref.invalidate(inboxProvider),
-                child: const Text('Try again'),
-              ),
-            ],
-          ),
-        ),
-        data: (list) => RefreshIndicator(
-          onRefresh: () => ref.refresh(inboxProvider.future),
-          child: list.isEmpty
-              ? ListView(
-                  children: const [
-                    Padding(
-                      padding: EdgeInsets.fromLTRB(24, 64, 24, 0),
-                      child: Text(
-                        'No requests yet. Set yourself as Available so owners nearby are matched with you.',
-                        textAlign: TextAlign.center,
-                      ),
-                    ),
-                  ],
-                )
-              : ListView.separated(
-                  padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
-                  itemCount: list.length,
-                  separatorBuilder: (_, _) => const SizedBox(height: 12),
-                  itemBuilder: (_, i) => _RequestCard(list[i]),
+      body: ContentWidth(
+        max: 720,
+        child: requests.when(
+          loading: () => const Center(child: CircularProgressIndicator()),
+          error: (_, _) => Center(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Text('Could not load your requests.'),
+                const SizedBox(height: 12),
+                FilledButton(
+                  onPressed: () => ref.invalidate(inboxProvider),
+                  child: const Text('Try again'),
                 ),
+              ],
+            ),
+          ),
+          data: (list) => RefreshIndicator(
+            onRefresh: () => ref.refresh(inboxProvider.future),
+            child: list.isEmpty
+                ? ListView(
+                    children: const [
+                      Padding(
+                        padding: EdgeInsets.fromLTRB(24, 64, 24, 0),
+                        child: Text(
+                          'No requests yet. Set yourself as Available so owners nearby are matched with you.',
+                          textAlign: TextAlign.center,
+                        ),
+                      ),
+                    ],
+                  )
+                : ListView.separated(
+                    padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
+                    itemCount: list.length,
+                    separatorBuilder: (_, _) => const SizedBox(height: 12),
+                    itemBuilder: (_, i) => _RequestCard(list[i]),
+                  ),
+          ),
         ),
       ),
     );

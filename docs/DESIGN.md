@@ -14,6 +14,16 @@ Full reasoning and before/after screens: https://claude.ai/artifact/SngcAzUst8vE
 - Tap targets are at least 48 px tall. Text is at least 13 px.
 - Layouts must hold at 320 px wide with text at 1.5 times size (there are tests for this).
 - No ratings or stars until real reviews exist (Phase 2).
+- The two home actions are tiles with an icon, a title, one line saying what happens, and an arrow.
+
+## Screen sizes
+
+- Under 900 px wide (phones, upright tablets): one column, capped at 560 px and centred.
+- 900 px and wider (laptops, desktops): home is two columns (main action left; browse,
+  how it works and safety right) and Browse shows two cards per row. Forms and the
+  request screens stay 560 px wide and centred; they do not stretch.
+- Bottom sheets are never wider than 560 px.
+- The desktop home must fit a 1280 x 600 window without scrolling.
 
 ## Palette (`lib/ui/theme.dart`)
 

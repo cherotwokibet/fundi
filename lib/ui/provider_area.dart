@@ -9,6 +9,7 @@ import 'admin_screen.dart';
 import 'inbox_screen.dart';
 import 'location_bar.dart';
 import 'theme.dart';
+import 'widgets.dart';
 
 /// Entry for mechanics and garages: sign in, then apply, then manage.
 class ProviderArea extends ConsumerWidget {
@@ -109,79 +110,81 @@ class _SignInState extends ConsumerState<_SignInScreen> {
     final sample = ref.watch(sampleModeProvider);
     return Scaffold(
       appBar: AppBar(title: const Text('For mechanics and garages')),
-      body: ListView(
-        padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
-        children: [
-          const Text(
-            'Get calls from car owners near you',
-            style: TextStyle(fontSize: 22, fontWeight: FontWeight.w700),
-          ),
-          const SizedBox(height: 6),
-          const Text(
-            'Join free. We verify your ID first, then owners can find and call you.',
-          ),
-          const SizedBox(height: 20),
-          if (sentTo == null) ...[
-            TextField(
-              key: const Key('phone'),
-              controller: phone,
-              keyboardType: TextInputType.phone,
-              autofillHints: const [AutofillHints.telephoneNumber],
-              decoration: const InputDecoration(
-                labelText: 'Your phone number',
-                hintText: '0712 345 678',
-                border: OutlineInputBorder(),
-              ),
+      body: ContentWidth(
+        child: ListView(
+          padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
+          children: [
+            const Text(
+              'Get calls from car owners near you',
+              style: TextStyle(fontSize: 22, fontWeight: FontWeight.w700),
             ),
-            const SizedBox(height: 16),
-            FilledButton(
-              key: const Key('send-code'),
-              onPressed: busy ? null : _send,
-              child: const Text('Send me a code'),
+            const SizedBox(height: 6),
+            const Text(
+              'Join free. We verify your ID first, then owners can find and call you.',
             ),
-          ] else ...[
-            Text('Enter the 6-digit code sent to $sentTo'),
-            if (sample)
-              const Padding(
-                padding: EdgeInsets.only(top: 6),
-                child: Text(
-                  'Sample mode: no SMS is sent. Use 123456. Sign in as 0700 000 000 to see the admin console.',
-                  style: TextStyle(fontSize: 13),
+            const SizedBox(height: 20),
+            if (sentTo == null) ...[
+              TextField(
+                key: const Key('phone'),
+                controller: phone,
+                keyboardType: TextInputType.phone,
+                autofillHints: const [AutofillHints.telephoneNumber],
+                decoration: const InputDecoration(
+                  labelText: 'Your phone number',
+                  hintText: '0712 345 678',
+                  border: OutlineInputBorder(),
                 ),
               ),
-            const SizedBox(height: 12),
-            TextField(
-              key: const Key('code'),
-              controller: code,
-              keyboardType: TextInputType.number,
-              maxLength: 6,
-              inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-              autofillHints: const [AutofillHints.oneTimeCode],
-              decoration: const InputDecoration(
-                labelText: 'Code',
-                border: OutlineInputBorder(),
+              const SizedBox(height: 16),
+              FilledButton(
+                key: const Key('send-code'),
+                onPressed: busy ? null : _send,
+                child: const Text('Send me a code'),
               ),
-            ),
-            const SizedBox(height: 8),
-            FilledButton(
-              key: const Key('verify-code'),
-              onPressed: busy ? null : _verify,
-              child: const Text('Continue'),
-            ),
-            TextButton(
-              onPressed: busy ? null : () => setState(() => sentTo = null),
-              child: const Text('Use a different number'),
-            ),
+            ] else ...[
+              Text('Enter the 6-digit code sent to $sentTo'),
+              if (sample)
+                const Padding(
+                  padding: EdgeInsets.only(top: 6),
+                  child: Text(
+                    'Sample mode: no SMS is sent. Use 123456. Sign in as 0700 000 000 to see the admin console.',
+                    style: TextStyle(fontSize: 13),
+                  ),
+                ),
+              const SizedBox(height: 12),
+              TextField(
+                key: const Key('code'),
+                controller: code,
+                keyboardType: TextInputType.number,
+                maxLength: 6,
+                inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                autofillHints: const [AutofillHints.oneTimeCode],
+                decoration: const InputDecoration(
+                  labelText: 'Code',
+                  border: OutlineInputBorder(),
+                ),
+              ),
+              const SizedBox(height: 8),
+              FilledButton(
+                key: const Key('verify-code'),
+                onPressed: busy ? null : _verify,
+                child: const Text('Continue'),
+              ),
+              TextButton(
+                onPressed: busy ? null : () => setState(() => sentTo = null),
+                child: const Text('Use a different number'),
+              ),
+            ],
+            if (error != null)
+              Padding(
+                padding: const EdgeInsets.only(top: 12),
+                child: Text(
+                  error!,
+                  style: TextStyle(color: Theme.of(context).colorScheme.error),
+                ),
+              ),
           ],
-          if (error != null)
-            Padding(
-              padding: const EdgeInsets.only(top: 12),
-              child: Text(
-                error!,
-                style: TextStyle(color: Theme.of(context).colorScheme.error),
-              ),
-            ),
-        ],
+        ),
       ),
     );
   }
@@ -255,115 +258,119 @@ class _ApplyState extends ConsumerState<_ApplyScreen> {
     final garage = type == ProviderType.garage;
     return Scaffold(
       appBar: AppBar(title: const Text('Your listing')),
-      body: Form(
-        key: form,
-        child: ListView(
-          padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
-          children: [
-            SegmentedButton<ProviderType>(
-              segments: const [
-                ButtonSegment(
-                  value: ProviderType.mobileMechanic,
-                  label: Text('I go to the car'),
-                  icon: Icon(Icons.build_outlined),
+      body: ContentWidth(
+        child: Form(
+          key: form,
+          child: ListView(
+            padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
+            children: [
+              SegmentedButton<ProviderType>(
+                segments: const [
+                  ButtonSegment(
+                    value: ProviderType.mobileMechanic,
+                    label: Text('I go to the car'),
+                    icon: Icon(Icons.build_outlined),
+                  ),
+                  ButtonSegment(
+                    value: ProviderType.garage,
+                    label: Text('I have a garage'),
+                    icon: Icon(Icons.garage_outlined),
+                  ),
+                ],
+                selected: {type},
+                onSelectionChanged: (s) => setState(() => type = s.first),
+              ),
+              const SizedBox(height: 16),
+              TextFormField(
+                key: const Key('listing-name'),
+                controller: name,
+                textCapitalization: TextCapitalization.words,
+                decoration: InputDecoration(
+                  labelText: garage
+                      ? 'Garage name'
+                      : 'Your name or business name',
+                  border: const OutlineInputBorder(),
                 ),
-                ButtonSegment(
-                  value: ProviderType.garage,
-                  label: Text('I have a garage'),
-                  icon: Icon(Icons.garage_outlined),
+                validator: (v) => (v == null || v.trim().length < 3)
+                    ? 'Enter the name owners will see'
+                    : null,
+              ),
+              const SizedBox(height: 14),
+              TextFormField(
+                key: const Key('listing-phone'),
+                controller: phone,
+                keyboardType: TextInputType.phone,
+                decoration: const InputDecoration(
+                  labelText: 'Number owners will call',
+                  hintText: '0712 345 678',
+                  border: OutlineInputBorder(),
+                ),
+                validator: (v) => normalizeKenyanPhone(v ?? '') == null
+                    ? 'Enter a Kenyan mobile number'
+                    : null,
+              ),
+              const SizedBox(height: 14),
+              TextFormField(
+                key: const Key('listing-fee'),
+                controller: fee,
+                keyboardType: TextInputType.number,
+                inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                decoration: const InputDecoration(
+                  labelText: 'Inspection or call-out fee in KES (optional)',
+                  helperText: 'Owners see this before they call. 0 means free.',
+                  border: OutlineInputBorder(),
+                ),
+              ),
+              const SizedBox(height: 14),
+              TextFormField(
+                controller: makes,
+                textCapitalization: TextCapitalization.words,
+                decoration: const InputDecoration(
+                  labelText: 'Car makes you work on (optional)',
+                  hintText: 'Toyota, Nissan, Subaru',
+                  helperText: 'Leave empty if you work on all makes.',
+                  border: OutlineInputBorder(),
+                ),
+              ),
+              const SizedBox(height: 16),
+              const Text(
+                'Where you work from',
+                style: TextStyle(fontWeight: FontWeight.w600),
+              ),
+              const LocationBar(),
+              if (!garage) ...[
+                const SizedBox(height: 8),
+                Text(
+                  'How far you travel: ${radius.round()} km',
+                  style: const TextStyle(fontWeight: FontWeight.w600),
+                ),
+                Slider(
+                  value: radius,
+                  min: 2,
+                  max: 20,
+                  divisions: 18,
+                  label: '${radius.round()} km',
+                  onChanged: (v) => setState(() => radius = v),
                 ),
               ],
-              selected: {type},
-              onSelectionChanged: (s) => setState(() => type = s.first),
-            ),
-            const SizedBox(height: 16),
-            TextFormField(
-              key: const Key('listing-name'),
-              controller: name,
-              textCapitalization: TextCapitalization.words,
-              decoration: InputDecoration(
-                labelText: garage
-                    ? 'Garage name'
-                    : 'Your name or business name',
-                border: const OutlineInputBorder(),
-              ),
-              validator: (v) => (v == null || v.trim().length < 3)
-                  ? 'Enter the name owners will see'
-                  : null,
-            ),
-            const SizedBox(height: 14),
-            TextFormField(
-              key: const Key('listing-phone'),
-              controller: phone,
-              keyboardType: TextInputType.phone,
-              decoration: const InputDecoration(
-                labelText: 'Number owners will call',
-                hintText: '0712 345 678',
-                border: OutlineInputBorder(),
-              ),
-              validator: (v) => normalizeKenyanPhone(v ?? '') == null
-                  ? 'Enter a Kenyan mobile number'
-                  : null,
-            ),
-            const SizedBox(height: 14),
-            TextFormField(
-              key: const Key('listing-fee'),
-              controller: fee,
-              keyboardType: TextInputType.number,
-              inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-              decoration: const InputDecoration(
-                labelText: 'Inspection or call-out fee in KES (optional)',
-                helperText: 'Owners see this before they call. 0 means free.',
-                border: OutlineInputBorder(),
-              ),
-            ),
-            const SizedBox(height: 14),
-            TextFormField(
-              controller: makes,
-              textCapitalization: TextCapitalization.words,
-              decoration: const InputDecoration(
-                labelText: 'Car makes you work on (optional)',
-                hintText: 'Toyota, Nissan, Subaru',
-                helperText: 'Leave empty if you work on all makes.',
-                border: OutlineInputBorder(),
-              ),
-            ),
-            const SizedBox(height: 16),
-            const Text(
-              'Where you work from',
-              style: TextStyle(fontWeight: FontWeight.w600),
-            ),
-            const LocationBar(),
-            if (!garage) ...[
-              const SizedBox(height: 8),
-              Text(
-                'How far you travel: ${radius.round()} km',
-                style: const TextStyle(fontWeight: FontWeight.w600),
-              ),
-              Slider(
-                value: radius,
-                min: 2,
-                max: 20,
-                divisions: 18,
-                label: '${radius.round()} km',
-                onChanged: (v) => setState(() => radius = v),
+              const SizedBox(height: 12),
+              if (error != null)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 12),
+                  child: Text(
+                    error!,
+                    style: TextStyle(
+                      color: Theme.of(context).colorScheme.error,
+                    ),
+                  ),
+                ),
+              FilledButton(
+                key: const Key('listing-submit'),
+                onPressed: busy ? null : _submit,
+                child: const Text('Send for verification'),
               ),
             ],
-            const SizedBox(height: 12),
-            if (error != null)
-              Padding(
-                padding: const EdgeInsets.only(bottom: 12),
-                child: Text(
-                  error!,
-                  style: TextStyle(color: Theme.of(context).colorScheme.error),
-                ),
-              ),
-            FilledButton(
-              key: const Key('listing-submit'),
-              onPressed: busy ? null : _submit,
-              child: const Text('Send for verification'),
-            ),
-          ],
+          ),
         ),
       ),
     );
@@ -414,64 +421,70 @@ class _ManageState extends ConsumerState<_ManageScreen> {
           ),
         ],
       ),
-      body: ListView(
-        padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
-        children: switch (l.status) {
-          ListingStatus.pending => [
-            const Text(
-              'One more step: your documents',
-              style: TextStyle(fontSize: 20, fontWeight: FontWeight.w700),
-            ),
-            const SizedBox(height: 4),
-            const Text(
-              'We check these before owners can see you. Only our verification team can open them.',
-            ),
-            const SizedBox(height: 12),
-            _Documents(l.type),
-          ],
-          ListingStatus.suspended => const [
-            _StatusNote(
-              icon: Icons.block,
-              title: 'Your listing is paused',
-              body: 'Owners cannot see you right now. Contact support.',
-            ),
-          ],
-          ListingStatus.approved => [
-            const InboxEntry(),
-            const SizedBox(height: 20),
-            const Text(
-              'Are you taking jobs now?',
-              style: TextStyle(fontSize: 20, fontWeight: FontWeight.w700),
-            ),
-            const SizedBox(height: 4),
-            Text(_statusLine(context, l)),
-            const SizedBox(height: 16),
-            for (final (a, label, hint) in const [
-              (Availability.available, 'Available', 'Owners can call you now'),
-              (
-                Availability.busy,
-                'Busy',
-                'Shown, but owners know you are on a job',
+      body: ContentWidth(
+        child: ListView(
+          padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
+          children: switch (l.status) {
+            ListingStatus.pending => [
+              const Text(
+                'One more step: your documents',
+                style: TextStyle(fontSize: 20, fontWeight: FontWeight.w700),
               ),
-              (Availability.offline, 'Offline', 'Not taking jobs'),
-            ]) ...[
-              _AvailabilityButton(
-                key: Key('set-${a.name}'),
-                label: label,
-                hint: hint,
-                color: a.color,
-                selected: l.availability == a,
-                onTap: busy ? null : () => _set(a),
+              const SizedBox(height: 4),
+              const Text(
+                'We check these before owners can see you. Only our verification team can open them.',
               ),
-              const SizedBox(height: 10),
+              const SizedBox(height: 12),
+              _Documents(l.type),
             ],
-            const SizedBox(height: 6),
-            const Text(
-              '"Available" lasts 4 hours. Tap it again to stay available, so owners never call a number that will not be answered.',
-              style: TextStyle(fontSize: 13),
-            ),
-          ],
-        },
+            ListingStatus.suspended => const [
+              _StatusNote(
+                icon: Icons.block,
+                title: 'Your listing is paused',
+                body: 'Owners cannot see you right now. Contact support.',
+              ),
+            ],
+            ListingStatus.approved => [
+              const InboxEntry(),
+              const SizedBox(height: 20),
+              const Text(
+                'Are you taking jobs now?',
+                style: TextStyle(fontSize: 20, fontWeight: FontWeight.w700),
+              ),
+              const SizedBox(height: 4),
+              Text(_statusLine(context, l)),
+              const SizedBox(height: 16),
+              for (final (a, label, hint) in const [
+                (
+                  Availability.available,
+                  'Available',
+                  'Owners can call you now',
+                ),
+                (
+                  Availability.busy,
+                  'Busy',
+                  'Shown, but owners know you are on a job',
+                ),
+                (Availability.offline, 'Offline', 'Not taking jobs'),
+              ]) ...[
+                _AvailabilityButton(
+                  key: Key('set-${a.name}'),
+                  label: label,
+                  hint: hint,
+                  color: a.color,
+                  selected: l.availability == a,
+                  onTap: busy ? null : () => _set(a),
+                ),
+                const SizedBox(height: 10),
+              ],
+              const SizedBox(height: 6),
+              const Text(
+                '"Available" lasts 4 hours. Tap it again to stay available, so owners never call a number that will not be answered.',
+                style: TextStyle(fontSize: 13),
+              ),
+            ],
+          },
+        ),
       ),
     );
   }
@@ -615,6 +628,7 @@ class _DocumentsState extends ConsumerState<_Documents> {
 
   void _choose(DocumentKind kind) {
     showModalBottomSheet<void>(
+      constraints: sheetConstraints,
       context: context,
       showDragHandle: true,
       builder: (sheet) => SafeArea(

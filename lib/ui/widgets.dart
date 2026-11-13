@@ -3,6 +3,34 @@ import 'package:flutter/material.dart';
 import '../models/service_provider.dart';
 import 'theme.dart';
 
+/// From this width up the app uses its desktop layouts.
+const wideBreakpoint = 900.0;
+
+bool isWide(BuildContext context) =>
+    MediaQuery.sizeOf(context).width >= wideBreakpoint;
+
+/// Keeps a screen's content at a readable width and centred on wide
+/// windows. On a phone it changes nothing.
+class ContentWidth extends StatelessWidget {
+  const ContentWidth({super.key, required this.child, this.max = 560});
+  final Widget child;
+  final double max;
+
+  @override
+  Widget build(BuildContext context) {
+    return Align(
+      alignment: Alignment.topCenter,
+      child: ConstrainedBox(
+        constraints: BoxConstraints(maxWidth: max),
+        child: child,
+      ),
+    );
+  }
+}
+
+/// Bottom sheets stay phone-sized on wide windows.
+const sheetConstraints = BoxConstraints(maxWidth: 560);
+
 enum ButtonKind { lime, forest, tint, outline }
 
 /// The app's big button. One lime button per screen: the main action.
@@ -70,6 +98,88 @@ class BigButton extends StatelessWidget {
                 ],
               ],
             ),
+    );
+  }
+}
+
+/// A big action with an icon, a title, one line saying what happens, and an
+/// arrow. Used for the two actions on the home screen.
+class ActionTile extends StatelessWidget {
+  const ActionTile({
+    super.key,
+    required this.icon,
+    required this.title,
+    required this.subtitle,
+    required this.onTap,
+    this.primary = false,
+  });
+  final IconData icon;
+  final String title;
+  final String subtitle;
+  final VoidCallback onTap;
+
+  /// The lime tile: the one main action. Otherwise a quiet tint tile.
+  final bool primary;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: primary ? lime : tint,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(18),
+        side: primary ? BorderSide.none : const BorderSide(color: hairline),
+      ),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(18),
+        onTap: onTap,
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(minHeight: 72),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+            child: Row(
+              children: [
+                Container(
+                  width: 46,
+                  height: 46,
+                  decoration: BoxDecoration(
+                    color: primary ? forest : Colors.white,
+                    shape: BoxShape.circle,
+                  ),
+                  child: Icon(icon, size: 24, color: primary ? lime : forest),
+                ),
+                const SizedBox(width: 14),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        title,
+                        style: const TextStyle(
+                          color: forest,
+                          fontSize: 18,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        subtitle,
+                        style: const TextStyle(
+                          color: forest,
+                          fontSize: 14,
+                          height: 1.3,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(width: 8),
+                const Icon(Icons.arrow_forward_rounded, color: forest),
+              ],
+            ),
+          ),
+        ),
+      ),
     );
   }
 }

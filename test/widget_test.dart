@@ -121,7 +121,7 @@ void main() {
     testWidgets('home shows the two actions and no login', (tester) async {
       await pumpApp(tester);
       expect(find.text('Find me a mechanic'), findsOneWidget);
-      expect(find.text('Browse and call a mechanic'), findsOneWidget);
+      expect(find.text('Browse and call'), findsOneWidget);
       expect(find.textContaining('Sign in'), findsNothing);
       // No open request, so no My repair button.
       expect(find.byKey(const Key('home-my-repair')), findsNothing);
@@ -276,6 +276,8 @@ void main() {
       tester,
     ) async {
       await pumpApp(tester);
+      await tester.ensureVisible(find.byKey(const Key('home-safety')));
+      await tester.pumpAndSettle();
       await tester.tap(find.byKey(const Key('home-safety')));
       await tester.pumpAndSettle();
       expect(find.text('Are you safe?'), findsOneWidget);
@@ -329,6 +331,62 @@ void main() {
         expect(tester.takeException(), isNull);
       });
     }
+
+    testWidgets('desktop: home shows everything without scrolling, in two '
+        'columns', (tester) async {
+      await pumpApp(tester);
+      // A laptop window. (The test font is wider than the real one.)
+      tester.view.physicalSize = const Size(1280, 720);
+      tester.view.devicePixelRatio = 1;
+      await tester.pumpAndSettle();
+      expect(tester.takeException(), isNull);
+      final findBox = tester.getRect(find.byKey(const Key('home-find')));
+      final browseBox = tester.getRect(find.byKey(const Key('home-browse')));
+      // Side by side, not stacked, and both on screen.
+      expect(browseBox.left, greaterThan(findBox.right));
+      for (final key in [
+        'home-find',
+        'home-browse',
+        'home-safety',
+        'home-provider',
+      ]) {
+        final box = tester.getRect(find.byKey(Key(key)));
+        expect(box.bottom, lessThanOrEqualTo(720), reason: key);
+      }
+      expect(find.text('HOW IT WORKS'), findsOneWidget);
+    });
+
+    testWidgets('desktop: browse shows two cards per row; forms stay narrow', (
+      tester,
+    ) async {
+      await pumpApp(tester);
+      tester.view.physicalSize = const Size(1366, 768);
+      tester.view.devicePixelRatio = 1;
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('home-browse')));
+      await tester.pumpAndSettle();
+      expect(tester.takeException(), isNull);
+      final first = tester.getRect(find.byKey(const Key('call-s1')));
+      final second = tester.getRect(find.byKey(const Key('call-s2')));
+      expect(second.left, greaterThan(first.right));
+      await tester.pageBack();
+      await tester.pumpAndSettle();
+
+      await findMatch(tester);
+      expect(tester.takeException(), isNull);
+      final button = tester.getRect(find.byKey(const Key('request-mechanic')));
+      expect(button.width, lessThanOrEqualTo(560));
+      // Centred, not stuck to the left edge.
+      expect((button.center.dx - 683).abs(), lessThan(2));
+    });
+
+    testWidgets('phone: home stays one column', (tester) async {
+      await pumpApp(tester);
+      final findBox = tester.getRect(find.byKey(const Key('home-find')));
+      final browseBox = tester.getRect(find.byKey(const Key('home-browse')));
+      expect(browseBox.top, greaterThan(findBox.bottom));
+      expect(find.text('HOW IT WORKS'), findsNothing);
+    });
 
     testWidgets('every tappable thing on home is at least 48 px tall', (
       tester,

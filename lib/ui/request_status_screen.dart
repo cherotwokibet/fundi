@@ -88,19 +88,21 @@ class _State extends ConsumerState<RequestStatusScreen> {
     final state = ref.watch(openRequestProvider);
     return Scaffold(
       appBar: AppBar(),
-      body: !state.hasValue
-          ? state.hasError
-                ? _Empty(
-                    title: 'Could not load your request',
-                    body: 'Check your connection and try again.',
-                    action: BigButton(
-                      label: 'Try again',
-                      kind: ButtonKind.tint,
-                      onPressed: () => ref.invalidate(openRequestProvider),
-                    ),
-                  )
-                : const Center(child: CircularProgressIndicator())
-          : _body(state.value),
+      body: ContentWidth(
+        child: !state.hasValue
+            ? state.hasError
+                  ? _Empty(
+                      title: 'Could not load your request',
+                      body: 'Check your connection and try again.',
+                      action: BigButton(
+                        label: 'Try again',
+                        kind: ButtonKind.tint,
+                        onPressed: () => ref.invalidate(openRequestProvider),
+                      ),
+                    )
+                  : const Center(child: CircularProgressIndicator())
+            : _body(state.value),
+      ),
     );
   }
 

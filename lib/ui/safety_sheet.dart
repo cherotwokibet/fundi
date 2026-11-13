@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../state/app_state.dart';
 import 'theme.dart';
+import 'widgets.dart';
 
 /// Emergency numbers in Kenya. 999 and 112 reach police and general
 /// emergency; 1199 is the Kenya Red Cross.
@@ -23,6 +24,7 @@ const emergencyNumbers = [
 /// "Accident or unsafe location?" Safety first, mechanic second.
 void showSafetySheet(BuildContext context) {
   showModalBottomSheet<void>(
+    constraints: sheetConstraints,
     context: context,
     showDragHandle: true,
     isScrollControlled: true,

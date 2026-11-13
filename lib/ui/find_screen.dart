@@ -59,6 +59,7 @@ class _State extends ConsumerState<FindScreen> {
 
   void _choosePhoto() {
     showModalBottomSheet<void>(
+      constraints: sheetConstraints,
       context: context,
       showDragHandle: true,
       builder: (sheet) => SafeArea(
@@ -209,7 +210,7 @@ class _State extends ConsumerState<FindScreen> {
       },
       child: Scaffold(
         appBar: AppBar(),
-        body: found != null ? _results(found) : _form(),
+        body: ContentWidth(child: found != null ? _results(found) : _form()),
       ),
     );
   }

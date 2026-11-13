@@ -6,6 +6,7 @@ import '../data/account_repository.dart';
 import '../data/admin_repository.dart';
 import '../state/app_state.dart';
 import 'theme.dart';
+import 'widgets.dart';
 
 /// Admin console: check each application, then approve or pause it.
 class AdminScreen extends ConsumerStatefulWidget {
@@ -81,74 +82,77 @@ class _State extends ConsumerState<AdminScreen> {
           ),
         ],
       ),
-      body: Column(
-        children: [
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
-            child: SegmentedButton<ListingStatus>(
-              segments: const [
-                ButtonSegment(
-                  value: ListingStatus.pending,
-                  label: Text('Waiting'),
-                ),
-                ButtonSegment(
-                  value: ListingStatus.approved,
-                  label: Text('Live'),
-                ),
-                ButtonSegment(
-                  value: ListingStatus.suspended,
-                  label: Text('Paused'),
-                ),
-              ],
-              selected: {tab},
-              onSelectionChanged: (s) {
-                tab = s.first;
-                _reload();
-              },
+      body: ContentWidth(
+        max: 900,
+        child: Column(
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
+              child: SegmentedButton<ListingStatus>(
+                segments: const [
+                  ButtonSegment(
+                    value: ListingStatus.pending,
+                    label: Text('Waiting'),
+                  ),
+                  ButtonSegment(
+                    value: ListingStatus.approved,
+                    label: Text('Live'),
+                  ),
+                  ButtonSegment(
+                    value: ListingStatus.suspended,
+                    label: Text('Paused'),
+                  ),
+                ],
+                selected: {tab},
+                onSelectionChanged: (s) {
+                  tab = s.first;
+                  _reload();
+                },
+              ),
             ),
-          ),
-          Expanded(
-            child: FutureBuilder<List<AdminListing>>(
-              future: rows,
-              builder: (context, snap) {
-                if (snap.connectionState != ConnectionState.done) {
-                  return const Center(child: CircularProgressIndicator());
-                }
-                if (snap.hasError) {
-                  return Center(
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        const Text('Could not load applications.'),
-                        const SizedBox(height: 12),
-                        FilledButton(
-                          onPressed: _reload,
-                          child: const Text('Try again'),
-                        ),
-                      ],
-                    ),
+            Expanded(
+              child: FutureBuilder<List<AdminListing>>(
+                future: rows,
+                builder: (context, snap) {
+                  if (snap.connectionState != ConnectionState.done) {
+                    return const Center(child: CircularProgressIndicator());
+                  }
+                  if (snap.hasError) {
+                    return Center(
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const Text('Could not load applications.'),
+                          const SizedBox(height: 12),
+                          FilledButton(
+                            onPressed: _reload,
+                            child: const Text('Try again'),
+                          ),
+                        ],
+                      ),
+                    );
+                  }
+                  final list = snap.data!;
+                  if (list.isEmpty) {
+                    return Center(
+                      child: Text(switch (tab) {
+                        ListingStatus.pending => 'No applications are waiting.',
+                        ListingStatus.approved => 'No providers are live yet.',
+                        ListingStatus.suspended => 'No providers are paused.',
+                      }),
+                    );
+                  }
+                  return ListView.separated(
+                    padding: const EdgeInsets.fromLTRB(16, 4, 16, 24),
+                    itemCount: list.length,
+                    separatorBuilder: (_, _) => const SizedBox(height: 12),
+                    itemBuilder: (_, i) => _card(list[i]),
                   );
-                }
-                final list = snap.data!;
-                if (list.isEmpty) {
-                  return Center(
-                    child: Text(switch (tab) {
-                      ListingStatus.pending => 'No applications are waiting.',
-                      ListingStatus.approved => 'No providers are live yet.',
-                      ListingStatus.suspended => 'No providers are paused.',
-                    }),
-                  );
-                }
-                return ListView.separated(
-                  padding: const EdgeInsets.fromLTRB(16, 4, 16, 24),
-                  itemCount: list.length,
-                  separatorBuilder: (_, _) => const SizedBox(height: 12),
-                  itemBuilder: (_, i) => _card(list[i]),
-                );
-              },
+                },
+              ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }

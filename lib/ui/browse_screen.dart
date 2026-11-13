@@ -26,76 +26,108 @@ class _State extends ConsumerState<BrowseScreen> {
     final nearby = ref.watch(nearbyProvider);
     return Scaffold(
       appBar: AppBar(),
-      body: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const Padding(
-            padding: EdgeInsets.fromLTRB(16, 0, 16, 0),
-            child: ScreenTitle('Mechanics nearby', subtitle: LocationBar()),
-          ),
-          SingleChildScrollView(
-            scrollDirection: Axis.horizontal,
-            padding: const EdgeInsets.fromLTRB(16, 4, 16, 12),
-            child: Row(
-              children: [
-                for (final (f, label) in const [
-                  (_Filter.all, 'All'),
-                  (_Filter.mobile, 'Comes to you'),
-                  (_Filter.garage, 'Garages'),
-                ])
-                  Padding(
-                    padding: const EdgeInsets.only(right: 8),
-                    child: _FilterChip(
-                      label: label,
-                      selected: filter == f,
-                      onTap: () => setState(() => filter = f),
+      body: ContentWidth(
+        max: 1040,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Padding(
+              padding: EdgeInsets.fromLTRB(16, 0, 16, 0),
+              child: ScreenTitle('Mechanics nearby', subtitle: LocationBar()),
+            ),
+            SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              padding: const EdgeInsets.fromLTRB(16, 4, 16, 12),
+              child: Row(
+                children: [
+                  for (final (f, label) in const [
+                    (_Filter.all, 'All'),
+                    (_Filter.mobile, 'Comes to you'),
+                    (_Filter.garage, 'Garages'),
+                  ])
+                    Padding(
+                      padding: const EdgeInsets.only(right: 8),
+                      child: _FilterChip(
+                        label: label,
+                        selected: filter == f,
+                        onTap: () => setState(() => filter = f),
+                      ),
                     ),
-                  ),
-              ],
-            ),
-          ),
-          Expanded(
-            child: nearby.when(
-              loading: () => const Center(child: CircularProgressIndicator()),
-              error: (e, _) => _Message(
-                icon: Icons.wifi_off,
-                title: 'Could not load mechanics',
-                body: 'Check your connection and try again.',
-                action: FilledButton(
-                  onPressed: () => ref.invalidate(nearbyProvider),
-                  child: const Text('Try again'),
-                ),
+                ],
               ),
-              data: (all) {
-                final list = all
-                    .where(
-                      (p) => switch (filter) {
-                        _Filter.all => true,
-                        _Filter.mobile => p.type == ProviderType.mobileMechanic,
-                        _Filter.garage => p.type == ProviderType.garage,
-                      },
-                    )
-                    .toList();
-                if (list.isEmpty) {
-                  return const _Message(
-                    icon: Icons.search_off,
-                    title: 'No verified mechanics here yet',
-                    body: 'We only show mechanics we have verified. Try another area using Change above.',
-                  );
-                }
-                return RefreshIndicator(
-                  onRefresh: () => ref.refresh(nearbyProvider.future),
-                  child: ListView.separated(
-                    padding: const EdgeInsets.fromLTRB(16, 4, 16, 24),
-                    itemCount: list.length,
-                    separatorBuilder: (_, _) => const SizedBox(height: 12),
-                    itemBuilder: (_, i) => ProviderCard(list[i]),
-                  ),
-                );
-              },
             ),
-          ),
-        ],
+            Expanded(
+              child: nearby.when(
+                loading: () => const Center(child: CircularProgressIndicator()),
+                error: (e, _) => _Message(
+                  icon: Icons.wifi_off,
+                  title: 'Could not load mechanics',
+                  body: 'Check your connection and try again.',
+                  action: FilledButton(
+                    onPressed: () => ref.invalidate(nearbyProvider),
+                    child: const Text('Try again'),
+                  ),
+                ),
+                data: (all) {
+                  final list = all
+                      .where(
+                        (p) => switch (filter) {
+                          _Filter.all => true,
+                          _Filter.mobile =>
+                            p.type == ProviderType.mobileMechanic,
+                          _Filter.garage => p.type == ProviderType.garage,
+                        },
+                      )
+                      .toList();
+                  if (list.isEmpty) {
+                    return const _Message(
+                      icon: Icons.search_off,
+                      title: 'No verified mechanics here yet',
+                      body: 'We only show mechanics we have verified. Try another area using Change above.',
+                    );
+                  }
+                  return RefreshIndicator(
+                    onRefresh: () => ref.refresh(nearbyProvider.future),
+                    // One column on a phone, two side by side on a wide window.
+                    child: LayoutBuilder(
+                      builder: (context, box) {
+                        final columns = box.maxWidth >= 760 ? 2 : 1;
+                        final rows = (list.length / columns).ceil();
+                        return ListView.separated(
+                          padding: const EdgeInsets.fromLTRB(16, 4, 16, 24),
+                          itemCount: rows,
+                          separatorBuilder: (_, _) =>
+                              const SizedBox(height: 12),
+                          itemBuilder: (_, r) {
+                            if (columns == 1) return ProviderCard(list[r]);
+                            final left = list[r * 2];
+                            final right = r * 2 + 1 < list.length
+                                ? list[r * 2 + 1]
+                                : null;
+                            return IntrinsicHeight(
+                              child: Row(
+                                crossAxisAlignment: CrossAxisAlignment.stretch,
+                                children: [
+                                  Expanded(child: ProviderCard(left)),
+                                  const SizedBox(width: 12),
+                                  Expanded(
+                                    child: right == null
+                                        ? const SizedBox()
+                                        : ProviderCard(right),
+                                  ),
+                                ],
+                              ),
+                            );
+                          },
+                        );
+                      },
+                    ),
+                  );
+                },
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }

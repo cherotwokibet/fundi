@@ -33,14 +33,15 @@ Gates: 90 verified providers live before Phase 2; 300 paid jobs in the pilot bef
 
 ## State of the build (12 Nov 2026)
 
-Built and covered by tests (26 passing), on sample data:
+Built and covered by tests (29 passing), on sample data:
 owner home, browse, tap to call, mechanic profile, find-me best match with optional photo
 and voice note, mechanic phone sign-in, listing application, document upload,
 availability switch, admin console, mechanic inbox (note, photo, voice note, take or pass).
 
 Owner app redesign (12 Nov): forest green and lime look, main button low on the screen,
 confirm before a request is sent, waiting screen, My repair, safety sheet with emergency
-numbers. Rules are in `docs/DESIGN.md`; the proposal with research is at
+numbers. Responsive: one column on phones, two columns from 900 px wide (13 Nov).
+Rules are in `docs/DESIGN.md`; the proposal with research is at
 https://claude.ai/artifact/SngcAzUst8vE8KrQKrBQrU. Mechanic and admin screens took the new
 colours but not new layouts.
 
