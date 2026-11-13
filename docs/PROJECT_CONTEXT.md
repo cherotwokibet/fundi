@@ -33,7 +33,7 @@ Gates: 90 verified providers live before Phase 2; 300 paid jobs in the pilot bef
 
 ## State of the build (12 Nov 2026)
 
-Built and covered by tests (29 passing), on sample data:
+Built and covered by tests (31 passing), on sample data:
 owner home, browse, tap to call, mechanic profile, find-me best match with optional photo
 and voice note, mechanic phone sign-in, listing application, document upload,
 availability switch, admin console, mechanic inbox (note, photo, voice note, take or pass).
@@ -45,14 +45,19 @@ Rules are in `docs/DESIGN.md`; the proposal with research is at
 https://claude.ai/artifact/SngcAzUst8vE8KrQKrBQrU. Mechanic and admin screens took the new
 colours but not new layouts.
 
-Database: seven migrations in `supabase/migrations/`. The access rules are tested on a
+Database: eight migrations in `supabase/migrations/`. The access rules are tested on a
 local Postgres with a stand-in for Supabase auth and storage: `supabase/tests/run.sh`
-(three SQL test files: inbox rules, mock SMS, owner request status).
+(four SQL test files: inbox rules, mock SMS, owner request status, test codes link).
 
 **Supabase project:** `lfgpmngtlypwyvpqytrz` (Frankfurt, free plan), URL
-`https://lfgpmngtlypwyvpqytrz.supabase.co`. All seven migrations applied by 12 Nov 2026 and
+`https://lfgpmngtlypwyvpqytrz.supabase.co`. All eight migrations applied by 13 Nov 2026 and
 the access rules checked in the live database. It holds test data only: one admin and one test mechanic (Kowino Mechs). Anonymous sign-ins are on. Phone sign-in uses a development-only mock
-(`mock_send_sms`): codes are stored in `dev_sms_outbox`, not sent. Switch it off before launch. The public key is passed
+(`mock_send_sms`): codes are stored in `dev_sms_outbox`, not sent. Testers read them at
+`<site>/?testcodes=<key>` (development only; the key is not in the repo). Switch both off
+before launch.
+
+**Web hosting for testing:** Netlify, published from the owner's PC with
+`dart run tool/deploy_web.dart` (settings in `deploy.env`, not in git). The public key is passed
 with `--dart-define`; it is not stored in the repo.
 
 **Proven on the live project (11 Nov, web):** anonymous and phone sign-in, listing

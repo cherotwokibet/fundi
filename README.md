@@ -45,6 +45,34 @@ flutter run --dart-define=SUPABASE_URL=https://xxxx.supabase.co --dart-define=SU
    In sample mode (no keys), any number works with code 123456, and a requested
    sample mechanic "accepts" after 15 seconds so the waiting screen can be tried.
 
+## Put it online for testing (Netlify)
+
+So any phone or computer can open the app against the cloud backend.
+
+One-time setup:
+
+```
+npm install -g netlify-cli
+netlify login
+copy deploy.env.example deploy.env     # then fill in the URL and publishable key
+```
+
+Publish (run again for every new version):
+
+```
+dart run tool/deploy_web.dart
+```
+
+The first run asks which Netlify site to use: choose "Create & configure a new
+project". Add `--draft` for a preview link that does not replace the live site.
+
+**Test sign-in codes.** While the mock SMS hook is on, nobody gets a text. Open
+`https://<your-site>/?testcodes=<key>` to see the latest codes; the page updates by
+itself. Only the hash of the key is stored (`dev_settings`); the top of
+`supabase/migrations/20261113000000_dev_codes_link.sql` says how to change the key or
+switch the link off. Anyone with the link can sign in as any number, so share it only
+with testers you trust, and switch it off before launch.
+
 Never put the `service_role` key in the app.
 
 ## What is built (Phase 1, owner side)

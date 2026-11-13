@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fundi/data/account_repository.dart';
 import 'package:fundi/data/admin_repository.dart';
+import 'package:fundi/data/dev_codes_repository.dart';
 import 'package:fundi/data/inbox_repository.dart';
 import 'package:fundi/data/provider_repository.dart';
 import 'package:fundi/data/voice_player.dart';
@@ -661,6 +662,45 @@ void main() {
     });
   });
 
+  testWidgets('test codes page: opens from the link key and leads to the app', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(1080, 2340);
+    tester.view.devicePixelRatio = 2.75;
+    addTearDown(tester.view.reset);
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          gpsLookupProvider.overrideWithValue(() async => null),
+          devCodesProvider.overrideWithValue(_FakeCodes()),
+        ],
+        child: const FundiApp(codesKey: 'a-long-test-key-0123456789'),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('Test sign-in codes'), findsOneWidget);
+    expect(find.text('+254712333444'), findsOneWidget);
+    expect(find.text('775991'), findsOneWidget);
+    await tester.tap(find.byKey(const Key('codes-open-app')));
+    await tester.pumpAndSettle();
+    expect(find.text('Find me a mechanic'), findsOneWidget);
+  });
+
+  testWidgets('test codes page: a wrong key shows no codes', (tester) async {
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          gpsLookupProvider.overrideWithValue(() async => null),
+          devCodesProvider.overrideWithValue(_FakeCodes()),
+        ],
+        child: const FundiApp(codesKey: 'wrong'),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(find.textContaining('This link does not work'), findsOneWidget);
+    expect(find.text('775991'), findsNothing);
+  });
+
   test('normalizeKenyanPhone accepts common formats and rejects others', () {
     expect(normalizeKenyanPhone('0712 345 678'), '+254712345678');
     expect(normalizeKenyanPhone('712345678'), '+254712345678');
@@ -698,4 +738,18 @@ class _FakePlayer implements VoicePlayer {
 
   @override
   Future<void> stop() async {}
+}
+
+class _FakeCodes implements DevCodesRepository {
+  @override
+  Future<List<DevCode>> latest(String key) async {
+    if (key != 'a-long-test-key-0123456789') throw Exception('Not allowed');
+    return [
+      (
+        phone: '254712333444',
+        otp: '775991',
+        createdAt: DateTime.now().subtract(const Duration(minutes: 1)),
+      ),
+    ];
+  }
 }

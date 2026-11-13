@@ -4,9 +4,11 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 
 import 'data/account_repository.dart';
 import 'data/admin_repository.dart';
+import 'data/dev_codes_repository.dart';
 import 'data/inbox_repository.dart';
 import 'data/provider_repository.dart';
 import 'state/app_state.dart';
+import 'ui/dev_codes_screen.dart';
 import 'ui/home_screen.dart';
 import 'ui/theme.dart';
 
@@ -41,16 +43,23 @@ Future<void> main() async {
           inboxRepositoryProvider.overrideWithValue(
             SupabaseInboxRepository(Supabase.instance.client),
           ),
+          devCodesProvider.overrideWithValue(
+            SupabaseDevCodesRepository(Supabase.instance.client),
+          ),
           sampleModeProvider.overrideWithValue(false),
         ],
       ],
-      child: const FundiApp(),
+      // Development only: <site>/?testcodes=<key> opens the test codes page.
+      child: FundiApp(codesKey: Uri.base.queryParameters['testcodes']),
     ),
   );
 }
 
 class FundiApp extends StatelessWidget {
-  const FundiApp({super.key});
+  const FundiApp({super.key, this.codesKey});
+
+  /// When set, the app opens on the test sign-in codes page.
+  final String? codesKey;
 
   @override
   Widget build(BuildContext context) {
@@ -58,7 +67,9 @@ class FundiApp extends StatelessWidget {
       title: 'Fundi',
       debugShowCheckedModeBanner: false,
       theme: buildTheme(),
-      home: const HomeScreen(),
+      home: (codesKey == null || codesKey!.isEmpty)
+          ? const HomeScreen()
+          : DevCodesScreen(codesKey!),
     );
   }
 }

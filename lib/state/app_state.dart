@@ -7,6 +7,7 @@ import 'package:url_launcher/url_launcher.dart';
 
 import '../data/account_repository.dart';
 import '../data/admin_repository.dart';
+import '../data/dev_codes_repository.dart';
 import '../data/inbox_repository.dart';
 import '../data/provider_repository.dart';
 import '../data/voice_player.dart';
@@ -66,6 +67,11 @@ final inboxProvider = FutureProvider<List<IncomingRequest>>((ref) {
 
 /// Plays voice notes in the inbox. Overridden in tests.
 final voicePlayerProvider = Provider<VoicePlayer>((ref) => DeviceVoicePlayer());
+
+/// Development only: the mock sign-in codes page.
+final devCodesProvider = Provider<DevCodesRepository>(
+  (ref) => SampleDevCodesRepository(),
+);
 
 final adminProvider = Provider<AdminRepository>(
   (ref) => SampleAdminRepository(),
