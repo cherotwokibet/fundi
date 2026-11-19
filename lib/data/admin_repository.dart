@@ -1,7 +1,11 @@
+import 'dart:typed_data';
+
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../models/service_provider.dart';
+import '../models/trade.dart';
 import 'account_repository.dart';
+import 'sample_directory.dart';
 
 /// A provider as the admin sees it: details, checks and uploaded documents.
 class AdminListing {
@@ -37,6 +41,60 @@ class AdminListing {
   bool get canApprove => checksPassed.contains(CheckKind.identity);
 }
 
+/// What the admin fills in to add a garage or mobile mechanic.
+class NewListing {
+  const NewListing({
+    required this.type,
+    required this.name,
+    required this.businessPhone,
+    required this.ownerPhone,
+    required this.area,
+    required this.lat,
+    required this.lng,
+    this.ownerName,
+    this.serviceRadiusKm = 5,
+    this.calloutFeeKes,
+    this.makes = const [],
+  });
+  final ProviderType type;
+  final String name;
+
+  /// The number owners call.
+  final String businessPhone;
+
+  /// The number the account holder signs in with. +2547XXXXXXXX.
+  final String ownerPhone;
+  final String? ownerName;
+  final String area;
+  final double lat;
+  final double lng;
+  final double serviceRadiusKm;
+  final int? calloutFeeKes;
+  final List<String> makes;
+}
+
+/// What the admin fills in to add a parts shop.
+class NewShop {
+  const NewShop({
+    required this.name,
+    required this.businessPhone,
+    required this.ownerPhone,
+    required this.area,
+    required this.lat,
+    required this.lng,
+    this.ownerName,
+  });
+  final String name;
+  final String businessPhone;
+  final String ownerPhone;
+  final String? ownerName;
+  final String area;
+  final double lat;
+  final double lng;
+}
+
+/// The admin console. Admins are the only way anyone gets onto the
+/// platform's trade side.
 abstract class AdminRepository {
   Future<List<AdminListing>> listings(ListingStatus status);
   Future<void> setCheck(String providerId, CheckKind kind, bool passed);
@@ -44,6 +102,31 @@ abstract class AdminRepository {
 
   /// A short-lived link to view a private document.
   Future<String> documentUrl(String storagePath);
+
+  /// Adds a garage or mechanic. It starts as waiting for checks.
+  Future<String> createListing(NewListing listing);
+
+  /// Uploads a document the admin collected in person.
+  Future<void> uploadDocument(
+    String providerId,
+    DocumentKind kind,
+    Uint8List bytes,
+    String mime,
+  );
+
+  Future<List<PartsShop>> shops();
+  Future<String> createShop(NewShop shop);
+  Future<void> setShopActive(String shopId, bool active);
+
+  /// The people who can sign in for a garage, mechanic listing or shop.
+  Future<List<OrgMember>> members(OrgKind kind, String orgId);
+  Future<void> addWorker(
+    OrgKind kind,
+    String orgId,
+    String phone,
+    String? name,
+  );
+  Future<void> setMemberActive(String memberId, bool active);
 }
 
 class SupabaseAdminRepository implements AdminRepository {
@@ -88,114 +171,296 @@ class SupabaseAdminRepository implements AdminRepository {
   }
 
   @override
-  Future<void> setCheck(String providerId, CheckKind kind, bool passed) async {
-    await _guard(
-      () => _client.rpc(
-        'admin_set_check',
-        params: {
-          'p_provider': providerId,
-          'p_kind': kind.name,
-          'p_passed': passed,
-        },
-      ),
-    );
-  }
+  Future<void> setCheck(String providerId, CheckKind kind, bool passed) =>
+      _guard(
+        () => _client.rpc(
+          'admin_set_check',
+          params: {
+            'p_provider': providerId,
+            'p_kind': kind.name,
+            'p_passed': passed,
+          },
+        ),
+      );
 
   @override
-  Future<void> setStatus(String providerId, ListingStatus status) async {
-    await _guard(
-      () => _client.rpc(
-        'admin_set_status',
-        params: {'p_provider': providerId, 'p_status': status.name},
-      ),
-    );
-  }
+  Future<void> setStatus(String providerId, ListingStatus status) => _guard(
+    () => _client.rpc(
+      'admin_set_status',
+      params: {'p_provider': providerId, 'p_status': status.name},
+    ),
+  );
 
   @override
   Future<String> documentUrl(String storagePath) =>
       _client.storage.from('kyc').createSignedUrl(storagePath, 300);
 
-  Future<void> _guard(Future<dynamic> Function() call) async {
+  @override
+  Future<String> createListing(NewListing l) async {
+    final id = await _guard(
+      () => _client.rpc(
+        'admin_create_provider',
+        params: {
+          'p_type': l.type == ProviderType.garage
+              ? 'garage'
+              : 'mobile_mechanic',
+          'p_name': l.name,
+          'p_business_phone': l.businessPhone,
+          'p_area': l.area,
+          'p_lat': l.lat,
+          'p_lng': l.lng,
+          'p_owner_phone': l.ownerPhone,
+          'p_owner_name': l.ownerName,
+          'p_service_radius_km': l.serviceRadiusKm,
+          'p_callout_fee_kes': l.calloutFeeKes,
+          'p_makes': l.makes,
+        },
+      ),
+    );
+    return id as String;
+  }
+
+  @override
+  Future<void> uploadDocument(
+    String providerId,
+    DocumentKind kind,
+    Uint8List bytes,
+    String mime,
+  ) async {
+    // Admin uploads live under admin/<provider id>/ in the private bucket.
+    final path = 'admin/$providerId/${kind.code}';
+    await _client.storage
+        .from('kyc')
+        .uploadBinary(
+          path,
+          bytes,
+          fileOptions: FileOptions(contentType: mime, upsert: true),
+        );
+    await _guard(
+      () => _client.from('provider_documents').upsert({
+        'provider_id': providerId,
+        'kind': kind.code,
+        'storage_path': path,
+        'uploaded_at': DateTime.now().toUtc().toIso8601String(),
+      }, onConflict: 'provider_id,kind'),
+    );
+  }
+
+  @override
+  Future<List<PartsShop>> shops() async {
+    final rows = await _client
+        .from('parts_shops')
+        .select('id, name, business_phone, area, status')
+        .order('created_at');
+    return [
+      for (final r in rows)
+        PartsShop(
+          id: r['id'] as String,
+          name: r['name'] as String,
+          phone: r['business_phone'] as String,
+          area: r['area'] as String,
+          active: r['status'] == 'active',
+        ),
+    ];
+  }
+
+  @override
+  Future<String> createShop(NewShop s) async {
+    final id = await _guard(
+      () => _client.rpc(
+        'admin_create_shop',
+        params: {
+          'p_name': s.name,
+          'p_business_phone': s.businessPhone,
+          'p_area': s.area,
+          'p_lat': s.lat,
+          'p_lng': s.lng,
+          'p_owner_phone': s.ownerPhone,
+          'p_owner_name': s.ownerName,
+        },
+      ),
+    );
+    return id as String;
+  }
+
+  @override
+  Future<void> setShopActive(String shopId, bool active) => _guard(
+    () => _client.rpc(
+      'admin_set_shop_status',
+      params: {'p_shop': shopId, 'p_status': active ? 'active' : 'suspended'},
+    ),
+  );
+
+  @override
+  Future<List<OrgMember>> members(OrgKind kind, String orgId) async {
+    final rows = await _client
+        .from('memberships')
+        .select('id, phone, full_name, role, active, user_id')
+        .eq(kind == OrgKind.provider ? 'provider_id' : 'shop_id', orgId)
+        .order('created_at');
+    return [
+      for (final r in rows)
+        OrgMember(
+          id: r['id'] as String,
+          phone: '+${r['phone']}',
+          name: r['full_name'] as String?,
+          role: r['role'] == 'owner' ? MemberRole.owner : MemberRole.worker,
+          active: r['active'] as bool,
+          signedIn: r['user_id'] != null,
+        ),
+    ];
+  }
+
+  @override
+  Future<void> addWorker(
+    OrgKind kind,
+    String orgId,
+    String phone,
+    String? name,
+  ) => _guard(
+    () => _client.rpc(
+      'admin_add_member',
+      params: {
+        'p_provider': kind == OrgKind.provider ? orgId : null,
+        'p_shop': kind == OrgKind.shop ? orgId : null,
+        'p_phone': phone,
+        'p_name': name,
+      },
+    ),
+  );
+
+  @override
+  Future<void> setMemberActive(String memberId, bool active) => _guard(
+    () => _client.rpc(
+      'admin_set_member_active',
+      params: {'p_member': memberId, 'p_active': active},
+    ),
+  );
+
+  Future<dynamic> _guard(Future<dynamic> Function() call) async {
     try {
-      await call();
+      return await call();
     } on PostgrestException catch (e) {
       throw AccountException(e.message);
     }
   }
 }
 
-/// Invented applications so the console can be tried without a backend.
+/// Works on the shared sample data so the console can be tried without a
+/// backend. Everything in it is invented.
 class SampleAdminRepository implements AdminRepository {
-  final List<AdminListing> _all = [
-    const AdminListing(
-      id: 'p1',
-      name: 'Mwangi Mobile Mechanic',
-      type: ProviderType.mobileMechanic,
-      phone: '+254700000011',
-      area: 'Kasarani – Roysambu',
-      status: ListingStatus.pending,
-      checksPassed: {},
-      documents: {
-        DocumentKind.nationalId: 'sample/national_id',
-        DocumentKind.selfie: 'sample/selfie',
-      },
-    ),
-    const AdminListing(
-      id: 'p2',
-      name: 'Eastlands Auto Garage',
-      type: ProviderType.garage,
-      phone: '+254700000012',
-      area: 'Kasarani – Roysambu',
-      status: ListingStatus.pending,
-      checksPassed: {CheckKind.identity},
-      documents: {DocumentKind.nationalId: 'sample/national_id'},
-    ),
-  ];
+  SampleAdminRepository([SampleDirectory? directory])
+    : directory = directory ?? SampleDirectory.seeded();
+  final SampleDirectory directory;
 
-  void _replace(String id, AdminListing Function(AdminListing) change) {
-    final i = _all.indexWhere((l) => l.id == id);
-    _all[i] = change(_all[i]);
-  }
-
-  AdminListing _copy(
-    AdminListing l, {
-    ListingStatus? status,
-    Set<CheckKind>? checks,
-  }) => AdminListing(
-    id: l.id,
-    name: l.name,
-    type: l.type,
-    phone: l.phone,
-    area: l.area,
-    status: status ?? l.status,
-    checksPassed: checks ?? l.checksPassed,
-    documents: l.documents,
-  );
+  SampleListingRecord _listing(String id) =>
+      directory.listings.firstWhere((l) => l.id == id);
 
   @override
-  Future<List<AdminListing>> listings(ListingStatus status) async =>
-      _all.where((l) => l.status == status).toList();
+  Future<List<AdminListing>> listings(ListingStatus status) async => [
+    for (final l in directory.listings)
+      if (l.status == status)
+        AdminListing(
+          id: l.id,
+          name: l.name,
+          type: l.type,
+          phone: l.phone,
+          area: l.area,
+          status: l.status,
+          checksPassed: {...l.checks},
+          documents: {...l.documents},
+        ),
+  ];
 
   @override
   Future<void> setCheck(String providerId, CheckKind kind, bool passed) async {
-    _replace(
-      providerId,
-      (l) => _copy(
-        l,
-        checks: {...l.checksPassed.where((k) => k != kind), if (passed) kind},
-      ),
-    );
+    final l = _listing(providerId);
+    passed ? l.checks.add(kind) : l.checks.remove(kind);
   }
 
   @override
   Future<void> setStatus(String providerId, ListingStatus status) async {
-    final l = _all.firstWhere((l) => l.id == providerId);
-    if (status == ListingStatus.approved && !l.canApprove) {
+    final l = _listing(providerId);
+    if (status == ListingStatus.approved &&
+        !l.checks.contains(CheckKind.identity)) {
       throw AccountException('Pass the identity check before approving');
     }
-    _replace(providerId, (l) => _copy(l, status: status));
+    l.status = status;
   }
 
   @override
   Future<String> documentUrl(String storagePath) async => '';
+
+  @override
+  Future<String> createListing(NewListing n) async => directory.addListing(
+    type: n.type,
+    name: n.name,
+    phone: n.businessPhone,
+    area: n.area,
+    ownerPhone: n.ownerPhone,
+    ownerName: n.ownerName,
+  );
+
+  @override
+  Future<void> uploadDocument(
+    String providerId,
+    DocumentKind kind,
+    Uint8List bytes,
+    String mime,
+  ) async {
+    _listing(providerId).documents[kind] = 'sample/${kind.code}';
+  }
+
+  @override
+  Future<List<PartsShop>> shops() async => [
+    for (final s in directory.shops)
+      PartsShop(
+        id: s.id,
+        name: s.name,
+        phone: s.phone,
+        area: s.area,
+        active: s.active,
+      ),
+  ];
+
+  @override
+  Future<String> createShop(NewShop s) async => directory.addShop(
+    name: s.name,
+    phone: s.businessPhone,
+    area: s.area,
+    ownerPhone: s.ownerPhone,
+    ownerName: s.ownerName,
+  );
+
+  @override
+  Future<void> setShopActive(String shopId, bool active) async {
+    directory.shops.firstWhere((s) => s.id == shopId).active = active;
+  }
+
+  @override
+  Future<List<OrgMember>> members(OrgKind kind, String orgId) async => [
+    for (final m in directory.members)
+      if (m.kind == kind && m.orgId == orgId)
+        OrgMember(
+          id: m.id,
+          phone: m.phone,
+          name: m.name,
+          role: m.role,
+          active: m.active,
+          signedIn: m.signedIn,
+        ),
+  ];
+
+  @override
+  Future<void> addWorker(
+    OrgKind kind,
+    String orgId,
+    String phone,
+    String? name,
+  ) async => directory.addWorker(kind, orgId, phone, name: name);
+
+  @override
+  Future<void> setMemberActive(String memberId, bool active) async {
+    directory.members.firstWhere((m) => m.id == memberId).active = active;
+  }
 }

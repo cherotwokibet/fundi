@@ -6,6 +6,7 @@ import 'data/account_repository.dart';
 import 'data/admin_repository.dart';
 import 'data/dev_codes_repository.dart';
 import 'data/inbox_repository.dart';
+import 'data/parts_repository.dart';
 import 'data/provider_repository.dart';
 import 'state/app_state.dart';
 import 'ui/dev_codes_screen.dart';
@@ -42,6 +43,9 @@ Future<void> main() async {
           ),
           inboxRepositoryProvider.overrideWithValue(
             SupabaseInboxRepository(Supabase.instance.client),
+          ),
+          partsProvider.overrideWithValue(
+            SupabasePartsRepository(Supabase.instance.client),
           ),
           devCodesProvider.overrideWithValue(
             SupabaseDevCodesRepository(Supabase.instance.client),

@@ -16,6 +16,8 @@ create schema auth;
 create table auth.users (
   id uuid primary key default gen_random_uuid(),
   phone text,
+  -- Set by Supabase once the phone code is entered. Tests leave the default.
+  phone_confirmed_at timestamptz default now(),
   is_anonymous boolean not null default false
 );
 create function auth.uid() returns uuid language sql stable as $$

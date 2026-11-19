@@ -4,14 +4,18 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../data/account_repository.dart';
 import '../models/service_provider.dart';
+import '../models/trade.dart';
 import '../state/app_state.dart';
 import 'admin_screen.dart';
 import 'inbox_screen.dart';
-import 'location_bar.dart';
+import 'parts_screen.dart';
+import 'shop_screen.dart';
 import 'theme.dart';
 import 'widgets.dart';
 
-/// Entry for mechanics and garages: sign in, then apply, then manage.
+/// Entry for mechanics, garages and parts shops. Nobody joins here: our
+/// team adds every business and the numbers of the people who work there.
+/// Signing in with one of those numbers opens what the person was added to.
 class ProviderArea extends ConsumerWidget {
   const ProviderArea({super.key});
 
@@ -21,28 +25,198 @@ class ProviderArea extends ConsumerWidget {
     // Rebuilt when sign-in state or the listing changes.
     ref.watch(accountVersionProvider);
     if (!account.isSignedIn) return const _SignInScreen();
-    if (ref.watch(isAdminProvider).value ?? false) return const AdminScreen();
+    return ref
+        .watch(accessProvider)
+        .when(
+          loading: () =>
+              const Scaffold(body: Center(child: CircularProgressIndicator())),
+          error: (e, _) => _RetryScreen(
+            message: 'Could not load your account.',
+            onRetry: () => ref.invalidate(accessProvider),
+          ),
+          data: (access) {
+            if (access.isAdmin) return const AdminScreen();
+            if (!access.isRegistered) return const _NotRegisteredScreen();
+            if (access.memberships.length > 1) return _ChooserScreen(access);
+            return _destination(access, access.memberships.single);
+          },
+        );
+  }
+}
+
+/// Where one membership leads.
+Widget _destination(TradeAccess access, Membership m) {
+  if (m.kind == OrgKind.shop) {
+    return m.isLive
+        ? ShopScreen(shopId: m.orgId, shopName: m.orgName)
+        : const _PausedScreen(
+            title: 'Your shop is paused',
+            body: 'Garages and mechanics cannot see your parts right now. Contact our team.',
+          );
+  }
+  if (m.role == MemberRole.owner) return const _ListingFlow();
+  return m.isLive
+      ? PartsMarketScreen(access: access)
+      : _PausedScreen(
+          title: m.orgStatus == 'pending'
+              ? '${m.orgName} is still being checked'
+              : '${m.orgName} is paused',
+          body: 'You can order spare parts once it is live.',
+        );
+}
+
+/// The listing owner's screens: status, documents, availability and inbox.
+class _ListingFlow extends ConsumerWidget {
+  const _ListingFlow();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
     final listing = ref.watch(myListingProvider);
     return listing.when(
       loading: () =>
           const Scaffold(body: Center(child: CircularProgressIndicator())),
-      error: (e, _) => Scaffold(
-        appBar: AppBar(),
-        body: Center(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const Text('Could not load your listing.'),
-              const SizedBox(height: 12),
-              FilledButton(
-                onPressed: () => ref.invalidate(myListingProvider),
-                child: const Text('Try again'),
-              ),
-            ],
+      error: (e, _) => _RetryScreen(
+        message: 'Could not load your listing.',
+        onRetry: () => ref.invalidate(myListingProvider),
+      ),
+      data: (l) => l == null
+          ? const _PausedScreen(
+              title: 'Your listing is not linked to this number',
+              body: 'Contact our team.',
+            )
+          : _ManageScreen(l),
+    );
+  }
+}
+
+class _RetryScreen extends StatelessWidget {
+  const _RetryScreen({required this.message, required this.onRetry});
+  final String message;
+  final VoidCallback onRetry;
+
+  @override
+  Widget build(BuildContext context) => Scaffold(
+    appBar: AppBar(),
+    body: Center(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(message),
+          const SizedBox(height: 12),
+          FilledButton(onPressed: onRetry, child: const Text('Try again')),
+        ],
+      ),
+    ),
+  );
+}
+
+Future<void> _signOut(WidgetRef ref) async {
+  await ref.read(accountProvider).signOut();
+  ref.read(accountVersionProvider.notifier).bump();
+}
+
+/// Signed in, but no admin has added this number.
+class _NotRegisteredScreen extends ConsumerWidget {
+  const _NotRegisteredScreen();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) => Scaffold(
+    appBar: AppBar(),
+    body: ContentWidth(
+      child: ListView(
+        padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
+        children: [
+          const _StatusNote(
+            icon: Icons.person_search_outlined,
+            title: 'This number is not registered',
+            body:
+                'Our team adds every mechanic, garage and parts shop after visiting and checking them. '
+                'If we added you, sign in with the number you gave us. '
+                'Not added yet? Ask our team to visit you.',
           ),
+          const SizedBox(height: 20),
+          FilledButton(
+            key: const Key('not-registered-sign-out'),
+            onPressed: () => _signOut(ref),
+            child: const Text('Use a different number'),
+          ),
+        ],
+      ),
+    ),
+  );
+}
+
+class _PausedScreen extends ConsumerWidget {
+  const _PausedScreen({required this.title, required this.body});
+  final String title;
+  final String body;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) => Scaffold(
+    appBar: AppBar(
+      actions: [
+        TextButton(
+          onPressed: () => _signOut(ref),
+          child: const Text('Sign out'),
+        ),
+      ],
+    ),
+    body: ContentWidth(
+      child: _StatusNote(icon: Icons.hourglass_top, title: title, body: body),
+    ),
+  );
+}
+
+/// For someone added to more than one business.
+class _ChooserScreen extends ConsumerWidget {
+  const _ChooserScreen(this.access);
+  final TradeAccess access;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('Your work'),
+        actions: [
+          TextButton(
+            onPressed: () => _signOut(ref),
+            child: const Text('Sign out'),
+          ),
+        ],
+      ),
+      body: ContentWidth(
+        child: ListView(
+          padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
+          children: [
+            for (final m in access.memberships)
+              Card(
+                margin: const EdgeInsets.only(bottom: 10),
+                child: ListTile(
+                  key: Key('choose-${m.orgId}'),
+                  leading: Icon(
+                    m.kind == OrgKind.shop
+                        ? Icons.storefront_outlined
+                        : Icons.build_outlined,
+                  ),
+                  title: Text(m.orgName),
+                  subtitle: Text(
+                    m.kind == OrgKind.shop
+                        ? 'Parts shop'
+                        : m.role == MemberRole.owner
+                        ? 'Your listing'
+                        : 'You order parts for this garage',
+                  ),
+                  trailing: const Icon(Icons.chevron_right),
+                  onTap: () => Navigator.of(context).push(
+                    MaterialPageRoute<void>(
+                      builder: (_) => _destination(access, m),
+                    ),
+                  ),
+                ),
+              ),
+          ],
         ),
       ),
-      data: (l) => l == null ? const _ApplyScreen() : _ManageScreen(l),
     );
   }
 }
@@ -109,18 +283,19 @@ class _SignInState extends ConsumerState<_SignInScreen> {
   Widget build(BuildContext context) {
     final sample = ref.watch(sampleModeProvider);
     return Scaffold(
-      appBar: AppBar(title: const Text('For mechanics and garages')),
+      appBar: AppBar(title: const Text('Mechanics, garages and parts shops')),
       body: ContentWidth(
         child: ListView(
           padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
           children: [
             const Text(
-              'Get calls from car owners near you',
+              'Sign in to your work account',
               style: TextStyle(fontSize: 22, fontWeight: FontWeight.w700),
             ),
             const SizedBox(height: 6),
             const Text(
-              'Join free. We verify your ID first, then owners can find and call you.',
+              'Our team adds every mechanic, garage and parts shop after checking them. '
+              'Sign in with the number you gave our team.',
             ),
             const SizedBox(height: 20),
             if (sentTo == null) ...[
@@ -147,7 +322,8 @@ class _SignInState extends ConsumerState<_SignInScreen> {
                 const Padding(
                   padding: EdgeInsets.only(top: 6),
                   child: Text(
-                    'Sample mode: no SMS is sent. Use 123456. Sign in as 0700 000 000 to see the admin console.',
+                    'Sample mode: no SMS is sent. Use 123456. Sample numbers: '
+                    '0700 000 000 admin, 0711 000 001 mechanic, 0711 000 002 parts shop.',
                     style: TextStyle(fontSize: 13),
                   ),
                 ),
@@ -191,193 +367,6 @@ class _SignInState extends ConsumerState<_SignInScreen> {
 }
 
 // ---------------------------------------------------------------------------
-// Apply: the listing details
-// ---------------------------------------------------------------------------
-class _ApplyScreen extends ConsumerStatefulWidget {
-  const _ApplyScreen();
-
-  @override
-  ConsumerState<_ApplyScreen> createState() => _ApplyState();
-}
-
-class _ApplyState extends ConsumerState<_ApplyScreen> {
-  final form = GlobalKey<FormState>();
-  final name = TextEditingController();
-  final phone = TextEditingController();
-  final fee = TextEditingController();
-  final makes = TextEditingController();
-  ProviderType type = ProviderType.mobileMechanic;
-  double radius = 5;
-  bool busy = false;
-  String? error;
-
-  @override
-  void dispose() {
-    for (final c in [name, phone, fee, makes]) {
-      c.dispose();
-    }
-    super.dispose();
-  }
-
-  Future<void> _submit() async {
-    if (!form.currentState!.validate()) return;
-    setState(() {
-      busy = true;
-      error = null;
-    });
-    try {
-      final loc = await ref.read(locationProvider.future);
-      await ref
-          .read(accountProvider)
-          .apply(
-            ListingApplication(
-              type: type,
-              name: name.text.trim(),
-              businessPhone: normalizeKenyanPhone(phone.text)!,
-              area: loc.label,
-              lat: loc.lat,
-              lng: loc.lng,
-              serviceRadiusKm: radius,
-              calloutFeeKes: int.tryParse(fee.text.trim()),
-              makes: [
-                for (final m in makes.text.split(','))
-                  if (m.trim().isNotEmpty) m.trim(),
-              ],
-            ),
-          );
-      ref.invalidate(myListingProvider);
-    } catch (e) {
-      if (mounted) setState(() => error = _friendly(e));
-    } finally {
-      if (mounted) setState(() => busy = false);
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final garage = type == ProviderType.garage;
-    return Scaffold(
-      appBar: AppBar(title: const Text('Your listing')),
-      body: ContentWidth(
-        child: Form(
-          key: form,
-          child: ListView(
-            padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
-            children: [
-              SegmentedButton<ProviderType>(
-                segments: const [
-                  ButtonSegment(
-                    value: ProviderType.mobileMechanic,
-                    label: Text('I go to the car'),
-                    icon: Icon(Icons.build_outlined),
-                  ),
-                  ButtonSegment(
-                    value: ProviderType.garage,
-                    label: Text('I have a garage'),
-                    icon: Icon(Icons.garage_outlined),
-                  ),
-                ],
-                selected: {type},
-                onSelectionChanged: (s) => setState(() => type = s.first),
-              ),
-              const SizedBox(height: 16),
-              TextFormField(
-                key: const Key('listing-name'),
-                controller: name,
-                textCapitalization: TextCapitalization.words,
-                decoration: InputDecoration(
-                  labelText: garage
-                      ? 'Garage name'
-                      : 'Your name or business name',
-                  border: const OutlineInputBorder(),
-                ),
-                validator: (v) => (v == null || v.trim().length < 3)
-                    ? 'Enter the name owners will see'
-                    : null,
-              ),
-              const SizedBox(height: 14),
-              TextFormField(
-                key: const Key('listing-phone'),
-                controller: phone,
-                keyboardType: TextInputType.phone,
-                decoration: const InputDecoration(
-                  labelText: 'Number owners will call',
-                  hintText: '0712 345 678',
-                  border: OutlineInputBorder(),
-                ),
-                validator: (v) => normalizeKenyanPhone(v ?? '') == null
-                    ? 'Enter a Kenyan mobile number'
-                    : null,
-              ),
-              const SizedBox(height: 14),
-              TextFormField(
-                key: const Key('listing-fee'),
-                controller: fee,
-                keyboardType: TextInputType.number,
-                inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-                decoration: const InputDecoration(
-                  labelText: 'Inspection or call-out fee in KES (optional)',
-                  helperText: 'Owners see this before they call. 0 means free.',
-                  border: OutlineInputBorder(),
-                ),
-              ),
-              const SizedBox(height: 14),
-              TextFormField(
-                controller: makes,
-                textCapitalization: TextCapitalization.words,
-                decoration: const InputDecoration(
-                  labelText: 'Car makes you work on (optional)',
-                  hintText: 'Toyota, Nissan, Subaru',
-                  helperText: 'Leave empty if you work on all makes.',
-                  border: OutlineInputBorder(),
-                ),
-              ),
-              const SizedBox(height: 16),
-              const Text(
-                'Where you work from',
-                style: TextStyle(fontWeight: FontWeight.w600),
-              ),
-              const LocationBar(),
-              if (!garage) ...[
-                const SizedBox(height: 8),
-                Text(
-                  'How far you travel: ${radius.round()} km',
-                  style: const TextStyle(fontWeight: FontWeight.w600),
-                ),
-                Slider(
-                  value: radius,
-                  min: 2,
-                  max: 20,
-                  divisions: 18,
-                  label: '${radius.round()} km',
-                  onChanged: (v) => setState(() => radius = v),
-                ),
-              ],
-              const SizedBox(height: 12),
-              if (error != null)
-                Padding(
-                  padding: const EdgeInsets.only(bottom: 12),
-                  child: Text(
-                    error!,
-                    style: TextStyle(
-                      color: Theme.of(context).colorScheme.error,
-                    ),
-                  ),
-                ),
-              FilledButton(
-                key: const Key('listing-submit'),
-                onPressed: busy ? null : _submit,
-                child: const Text('Send for verification'),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-// ---------------------------------------------------------------------------
 // Manage: status and the availability switch
 // ---------------------------------------------------------------------------
 class _ManageScreen extends ConsumerStatefulWidget {
@@ -413,10 +402,7 @@ class _ManageState extends ConsumerState<_ManageScreen> {
         title: Text(l.name),
         actions: [
           TextButton(
-            onPressed: () async {
-              await ref.read(accountProvider).signOut();
-              ref.read(accountVersionProvider.notifier).bump();
-            },
+            onPressed: () => _signOut(ref),
             child: const Text('Sign out'),
           ),
         ],
@@ -427,12 +413,13 @@ class _ManageState extends ConsumerState<_ManageScreen> {
           children: switch (l.status) {
             ListingStatus.pending => [
               const Text(
-                'One more step: your documents',
+                'Our team is checking your listing',
                 style: TextStyle(fontSize: 20, fontWeight: FontWeight.w700),
               ),
               const SizedBox(height: 4),
               const Text(
-                'We check these before owners can see you. Only our verification team can open them.',
+                'Owners will see you once the checks are done. If our team asked for a document, '
+                'you can add it here. Only our verification team can open them.',
               ),
               const SizedBox(height: 12),
               _Documents(l.type),
@@ -446,6 +433,8 @@ class _ManageState extends ConsumerState<_ManageScreen> {
             ],
             ListingStatus.approved => [
               const InboxEntry(),
+              const SizedBox(height: 12),
+              const _PartsEntry(),
               const SizedBox(height: 20),
               const Text(
                 'Are you taking jobs now?',
@@ -704,6 +693,36 @@ class _DocumentsState extends ConsumerState<_Documents> {
               : 'Upload the two required documents to start verification.',
         ),
       ],
+    );
+  }
+}
+
+/// Opens the spare parts marketplace from an approved listing.
+class _PartsEntry extends ConsumerWidget {
+  const _PartsEntry();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final access = ref.watch(accessProvider).value;
+    if (access == null || access.buyers.isEmpty) return const SizedBox.shrink();
+    return Card(
+      child: ListTile(
+        key: const Key('open-parts'),
+        leading: const Icon(Icons.inventory_2_outlined, color: brandGreen),
+        title: const Text(
+          'Order spare parts',
+          style: TextStyle(fontWeight: FontWeight.w700),
+        ),
+        subtitle: const Text(
+          'From verified parts shops. Only for mechanics and garages.',
+        ),
+        trailing: const Icon(Icons.chevron_right),
+        onTap: () => Navigator.of(context).push(
+          MaterialPageRoute<void>(
+            builder: (_) => PartsMarketScreen(access: access),
+          ),
+        ),
+      ),
     );
   }
 }

@@ -67,7 +67,7 @@ class HomeScreen extends ConsumerWidget {
     final mechanic = TextButton(
       key: const Key('home-provider'),
       onPressed: () => go(const ProviderArea()),
-      child: const Text('I\'m a mechanic or garage'),
+      child: const Text('For mechanics, garages and parts shops'),
     );
 
     if (isWide(context)) {

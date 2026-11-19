@@ -7,12 +7,15 @@ import 'package:fundi/data/account_repository.dart';
 import 'package:fundi/data/admin_repository.dart';
 import 'package:fundi/data/dev_codes_repository.dart';
 import 'package:fundi/data/inbox_repository.dart';
+import 'package:fundi/data/parts_repository.dart';
+import 'package:fundi/data/sample_directory.dart';
 import 'package:fundi/data/provider_repository.dart';
 import 'package:fundi/data/voice_player.dart';
 import 'package:fundi/data/voice_recorder.dart';
 import 'package:fundi/data/zones.dart';
 import 'package:fundi/main.dart';
 import 'package:fundi/models/service_provider.dart';
+import 'package:fundi/models/trade.dart';
 import 'package:fundi/state/app_state.dart';
 import 'package:fundi/ui/request_status_screen.dart';
 
@@ -124,6 +127,9 @@ void main() {
       expect(find.text('Find me a mechanic'), findsOneWidget);
       expect(find.text('Browse and call'), findsOneWidget);
       expect(find.textContaining('Sign in'), findsNothing);
+      // Car owners never see the parts marketplace.
+      expect(find.textContaining('Spare parts'), findsNothing);
+      expect(find.textContaining('Order spare parts'), findsNothing);
       // No open request, so no My repair button.
       expect(find.byKey(const Key('home-my-repair')), findsNothing);
     });
@@ -419,14 +425,15 @@ void main() {
       expect(find.text('Availability not confirmed'), findsOneWidget);
     });
 
-    testWidgets('mechanic: sign in, apply, then switch to available', (
+    testWidgets('trade sign-in: an unregistered number gets no way to join', (
       tester,
     ) async {
       await pumpApp(tester);
-      await tester.ensureVisible(find.byKey(const Key('home-provider')));
-      await tester.pumpAndSettle();
-      await tester.tap(find.byKey(const Key('home-provider')));
-      await tester.pumpAndSettle();
+      await openTradeArea(tester);
+      expect(
+        find.textContaining('Our team adds every mechanic'),
+        findsOneWidget,
+      );
 
       // A bad number is rejected before any code is sent.
       await tester.enterText(find.byKey(const Key('phone')), '12345');
@@ -441,53 +448,241 @@ void main() {
       await tester.tap(find.byKey(const Key('send-code')));
       await tester.pumpAndSettle();
       expect(find.textContaining('+254712345678'), findsOneWidget);
-
       await tester.enterText(find.byKey(const Key('code')), '000000');
       await tester.tap(find.byKey(const Key('verify-code')));
       await tester.pumpAndSettle();
       expect(find.text('That code is not correct.'), findsOneWidget);
-
       await tester.enterText(find.byKey(const Key('code')), '123456');
       await tester.tap(find.byKey(const Key('verify-code')));
       await tester.pumpAndSettle();
 
+      expect(find.text('This number is not registered'), findsOneWidget);
+      // No listing form, no documents, no way to make themselves a mechanic.
+      expect(find.byKey(const Key('listing-name')), findsNothing);
+      expect(find.byKey(const Key('upload-national_id')), findsNothing);
+      await tester.tap(find.byKey(const Key('not-registered-sign-out')));
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('phone')), findsOneWidget);
+    });
+
+    testWidgets('admin adds a mechanic, approves them, then the mechanic '
+        'signs in and goes available', (tester) async {
+      await pumpApp(tester);
+      await openTradeArea(tester);
+      await signIn(tester, '0700 000 000');
+      expect(find.text('Admin'), findsOneWidget);
+
+      await tester.tap(find.byKey(const Key('admin-add-listing')));
+      await tester.pumpAndSettle();
       await tester.enterText(
-        find.byKey(const Key('listing-name')),
+        find.byKey(const Key('new-name')),
         'Baraka Mobile Mechanic',
       );
       await tester.enterText(
-        find.byKey(const Key('listing-phone')),
-        '0722000111',
+        find.byKey(const Key('new-owner-phone')),
+        '0712 345 678',
       );
-      await tester.enterText(find.byKey(const Key('listing-fee')), '400');
+      await tester.enterText(find.byKey(const Key('new-fee')), '400');
       await tester.scrollUntilVisible(
-        find.byKey(const Key('listing-submit')),
+        find.byKey(const Key('zone-0')),
         200,
         scrollable: find.byType(Scrollable).last,
       );
-      await tester.tap(find.byKey(const Key('listing-submit')));
+      await tester.tap(find.byKey(const Key('zone-0')));
+      await tester.pumpAndSettle();
+      await tester.scrollUntilVisible(
+        find.byKey(const Key('new-submit')),
+        200,
+        scrollable: find.byType(Scrollable).last,
+      );
+      await tester.tap(find.byKey(const Key('new-submit')));
       await tester.pumpAndSettle();
 
-      final sent = account.lastApplication!;
-      expect(sent.businessPhone, '+254722000111');
-      expect(sent.calloutFeeKes, 400);
-      expect(sent.area, zones.first.name);
+      // Let the "Added" message go so it does not cover the buttons.
+      await tester.pump(const Duration(seconds: 5));
+      await tester.pumpAndSettle();
+      final added = account.directory.listings.last;
+      expect(added.name, 'Baraka Mobile Mechanic');
+      expect(added.status, ListingStatus.pending);
+      // The number owners call defaults to the sign-in number.
+      expect(added.phone, '+254712345678');
+      expect(added.area, zones.first.name);
 
-      // Pending until both required documents are uploaded.
-      expect(find.text('One more step: your documents'), findsOneWidget);
-      expect(find.text('Are you taking jobs now?'), findsNothing);
-      for (final kind in ['national_id', 'selfie']) {
-        await tester.tap(find.byKey(Key('upload-$kind')));
-        await tester.pumpAndSettle();
-        await tester.tap(find.byKey(const Key('doc-camera')));
-        await tester.pumpAndSettle();
-      }
+      await tester.scrollUntilVisible(
+        find.byKey(Key('check-${added.id}-identity')),
+        300,
+        scrollable: find
+            .descendant(
+              of: find.byType(ListView),
+              matching: find.byType(Scrollable),
+            )
+            .first,
+      );
+      await tester.ensureVisible(find.byKey(Key('check-${added.id}-identity')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(Key('check-${added.id}-identity')));
+      await tester.pumpAndSettle();
+      await tester.scrollUntilVisible(
+        find.byKey(Key('approve-${added.id}')),
+        300,
+        scrollable: find
+            .descendant(
+              of: find.byType(ListView),
+              matching: find.byType(Scrollable),
+            )
+            .first,
+      );
+      await tester.ensureVisible(find.byKey(Key('approve-${added.id}')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(Key('approve-${added.id}')));
+      await tester.pumpAndSettle();
+      expect(added.status, ListingStatus.approved);
 
+      await tester.tap(find.text('Sign out'));
+      await tester.pumpAndSettle();
+      await signIn(tester, '0712 345 678');
       expect(find.text('Are you taking jobs now?'), findsOneWidget);
       expect(find.text('Owners see you as offline.'), findsOneWidget);
+      expect(find.byKey(const Key('open-parts')), findsOneWidget);
       await tester.tap(find.byKey(const Key('set-available')));
       await tester.pumpAndSettle();
       expect(find.textContaining('available until'), findsOneWidget);
+    });
+
+    testWidgets('a mechanic finds a part, orders it and sees the order', (
+      tester,
+    ) async {
+      await pumpApp(tester);
+      await openTradeArea(tester);
+      await signIn(tester, '0711 000 001');
+      await tester.ensureVisible(find.byKey(const Key('open-parts')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('open-parts')));
+      await tester.pumpAndSettle();
+      expect(find.text('Front brake pads'), findsOneWidget);
+
+      await tester.enterText(
+        find.byKey(const Key('parts-search')),
+        'alternator',
+      );
+      await tester.enterText(find.byKey(const Key('parts-make')), 'toyota');
+      await tester.tap(find.byKey(const Key('parts-search-go')));
+      await tester.pumpAndSettle();
+      expect(find.text('Alternator'), findsOneWidget);
+      expect(find.text('Front brake pads'), findsNothing);
+
+      await tester.tap(find.byKey(const Key('call-shop-part2')));
+      expect(dialed, [SampleDirectory.shopPhone]);
+
+      await tester.tap(find.byKey(const Key('order-part2')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('qty-plus')));
+      await tester.pumpAndSettle();
+      // Only 2 in stock: no third.
+      await tester.tap(find.byKey(const Key('qty-plus')));
+      await tester.pumpAndSettle();
+      expect(find.text('2'), findsWidgets);
+      expect(find.textContaining('Total KES 19,000'), findsOneWidget);
+      await tester.enterText(
+        find.byKey(const Key('order-note')),
+        'Collect at 4',
+      );
+      await tester.tap(find.byKey(const Key('order-send')));
+      await tester.pumpAndSettle();
+      expect(find.textContaining('Order sent to'), findsOneWidget);
+      // Both alternators are now held for this order.
+      expect(find.text('Alternator'), findsNothing);
+
+      await tester.tap(find.byKey(const Key('parts-my-orders')));
+      await tester.pumpAndSettle();
+      expect(find.text('Waiting for the shop'), findsOneWidget);
+      expect(find.text('2 × Alternator'), findsOneWidget);
+    });
+
+    testWidgets('a parts shop confirms an order and lists a new part', (
+      tester,
+    ) async {
+      await pumpApp(tester);
+      // The sample mechanic orders first, through the same rules.
+      final dir = account.directory;
+      final mechanicParts = SamplePartsRepository(
+        dir,
+        () => SampleDirectory.mechanicPhone,
+      );
+      dir.claim(SampleDirectory.mechanicPhone);
+      final buyer = dir.listingOwnedBy(SampleDirectory.mechanicPhone)!;
+      await mechanicParts.placeOrder(
+        buyerId: buyer.id,
+        partId: 'part1',
+        qty: 1,
+      );
+
+      await openTradeArea(tester);
+      await signIn(tester, '0711 000 002');
+      expect(find.text('Sample: Kirinyaga Road Spares'), findsOneWidget);
+      expect(find.text(buyer.name), findsOneWidget);
+      final order = dir.orders.single.order;
+      await tester.tap(find.byKey(Key('order-next-${order.id}')));
+      await tester.pumpAndSettle();
+      expect(find.text('Confirmed by the shop'), findsOneWidget);
+      expect(dir.orders.single.order.status, OrderStatus.confirmed);
+
+      await tester.tap(find.byKey(const Key('shop-tab-parts')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('add-part')));
+      await tester.pumpAndSettle();
+      await tester.enterText(
+        find.byKey(const Key('part-title')),
+        'Shock absorber',
+      );
+      await tester.enterText(find.byKey(const Key('part-makes')), 'Nissan');
+      await tester.scrollUntilVisible(
+        find.byKey(const Key('part-price')),
+        200,
+        scrollable: find.byType(Scrollable).last,
+      );
+      await tester.enterText(find.byKey(const Key('part-price')), '6500');
+      await tester.enterText(find.byKey(const Key('part-stock')), '4');
+      await tester.scrollUntilVisible(
+        find.byKey(const Key('part-save')),
+        200,
+        scrollable: find.byType(Scrollable).last,
+      );
+      await tester.tap(find.byKey(const Key('part-save')));
+      await tester.pumpAndSettle();
+      expect(find.text('Shock absorber'), findsOneWidget);
+      // The mechanic can now find it.
+      final found = await mechanicParts.search(query: 'shock', make: 'nissan');
+      expect(found.single.priceKes, 6500);
+    });
+
+    testWidgets('admin adds a shop worker, who signs in to the shop', (
+      tester,
+    ) async {
+      await pumpApp(tester);
+      await openTradeArea(tester);
+      await signIn(tester, '0700 000 000');
+      await tester.tap(find.byKey(const Key('admin-tab-shops')));
+      await tester.pumpAndSettle();
+      final shop = account.directory.shops.single;
+      await tester.tap(find.byKey(Key('people-${shop.id}')));
+      await tester.pumpAndSettle();
+      await tester.enterText(find.byKey(const Key('member-name')), 'Otieno');
+      await tester.enterText(
+        find.byKey(const Key('member-phone')),
+        '0733 000 111',
+      );
+      await tester.tap(find.byKey(const Key('member-add')));
+      await tester.pumpAndSettle();
+      expect(find.textContaining('Not signed in yet'), findsNWidgets(2));
+      await tester.pageBack();
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Sign out'));
+      await tester.pumpAndSettle();
+
+      await signIn(tester, '0733 000 111');
+      expect(find.text(shop.name), findsOneWidget);
+      expect(find.text('Our parts'), findsOneWidget);
     });
   });
 
@@ -503,7 +698,10 @@ void main() {
     await admin.setStatus(first.id, ListingStatus.approved);
     waiting = await admin.listings(ListingStatus.pending);
     expect(waiting.any((l) => l.id == first.id), isFalse);
-    expect((await admin.listings(ListingStatus.approved)).single.id, first.id);
+    expect(
+      (await admin.listings(ListingStatus.approved)).map((l) => l.id),
+      contains(first.id),
+    );
   });
 
   testWidgets(
@@ -531,9 +729,13 @@ void main() {
       await tester.pumpAndSettle();
       await tester.tap(find.byKey(const Key('home-provider')));
       await tester.pumpAndSettle();
-      expect(find.text('Verification'), findsOneWidget);
+      expect(find.text('Admin'), findsOneWidget);
       expect(find.text('Mwangi Mobile Mechanic'), findsOneWidget);
+      await tester.ensureVisible(find.byKey(const Key('check-p1-identity')));
+      await tester.pumpAndSettle();
       await tester.tap(find.byKey(const Key('check-p1-identity')));
+      await tester.pumpAndSettle();
+      await tester.ensureVisible(find.byKey(const Key('approve-p1')));
       await tester.pumpAndSettle();
       await tester.tap(find.byKey(const Key('approve-p1')));
       await tester.pumpAndSettle();
@@ -546,29 +748,21 @@ void main() {
     late _FakePlayer player;
 
     Future<void> pumpApproved(WidgetTester tester) async {
-      final account = SampleAccountRepository();
+      final dir = SampleDirectory.seeded();
+      final id = dir.addListing(
+        type: ProviderType.mobileMechanic,
+        name: 'Baraka Mobile Mechanic',
+        phone: '+254722000111',
+        area: 'Kasarani',
+        ownerPhone: '+254712345678',
+        status: ListingStatus.approved,
+      );
+      dir.listings.firstWhere((l) => l.id == id).checks.add(CheckKind.identity);
+      final account = SampleAccountRepository(dir);
       await account.verifyCode(
         '+254712345678',
         SampleAccountRepository.sampleCode,
       );
-      await account.apply(
-        const ListingApplication(
-          type: ProviderType.mobileMechanic,
-          name: 'Baraka Mobile Mechanic',
-          businessPhone: '+254722000111',
-          area: 'Kasarani',
-          lat: -1.22,
-          lng: 36.9,
-          serviceRadiusKm: 5,
-        ),
-      );
-      final bytes = Uint8List.fromList([1]);
-      await account.uploadDocument(
-        DocumentKind.nationalId,
-        bytes,
-        'image/jpeg',
-      );
-      await account.uploadDocument(DocumentKind.selfie, bytes, 'image/jpeg');
       inbox = _LinkedInbox();
       player = _FakePlayer();
       tester.view.physicalSize = const Size(1080, 2340);
@@ -701,6 +895,105 @@ void main() {
     expect(find.text('775991'), findsNothing);
   });
 
+  group('trade rules in sample mode', () {
+    late SampleDirectory dir;
+    setUp(() => dir = SampleDirectory.seeded());
+
+    SamplePartsRepository partsFor(String? phone) {
+      if (phone != null) dir.claim(phone);
+      return SamplePartsRepository(dir, () => phone);
+    }
+
+    test('strangers and signed-out people cannot see parts', () async {
+      expect(
+        () => partsFor('+254799000000').search(),
+        throwsA(isA<AccountException>()),
+      );
+      expect(() => partsFor(null).search(), throwsA(isA<AccountException>()));
+    });
+
+    test('a helper at a listing still being checked cannot order', () async {
+      dir.addWorker(OrgKind.provider, 'p1', '+254733000222');
+      final parts = partsFor('+254733000222');
+      expect(() => parts.search(), throwsA(isA<AccountException>()));
+      expect(
+        () => parts.placeOrder(buyerId: 'p1', partId: 'part1', qty: 1),
+        throwsA(isA<AccountException>()),
+      );
+    });
+
+    test(
+      'a buyer cannot confirm their own order; cancelling gives stock back',
+      () async {
+        final buyerParts = partsFor(SampleDirectory.mechanicPhone);
+        final buyer = dir.listingOwnedBy(SampleDirectory.mechanicPhone)!;
+        final id = await buyerParts.placeOrder(
+          buyerId: buyer.id,
+          partId: 'part1',
+          qty: 2,
+        );
+        expect(dir.parts.firstWhere((p) => p.id == 'part1').stockQty, 4);
+        expect(
+          () => buyerParts.updateOrder(id, OrderStatus.confirmed),
+          throwsA(isA<AccountException>()),
+        );
+        await buyerParts.updateOrder(id, OrderStatus.cancelled);
+        expect(dir.parts.firstWhere((p) => p.id == 'part1').stockQty, 6);
+      },
+    );
+
+    test('one number cannot run two listings', () {
+      expect(
+        () => dir.addListing(
+          type: ProviderType.garage,
+          name: 'Second',
+          phone: SampleDirectory.mechanicPhone,
+          area: 'Kasarani',
+          ownerPhone: SampleDirectory.mechanicPhone,
+        ),
+        throwsA(isA<AccountException>()),
+      );
+    });
+
+    test('a switched-off person loses access', () async {
+      final account = SampleAccountRepository(dir);
+      await account.verifyCode(
+        SampleDirectory.shopPhone,
+        SampleAccountRepository.sampleCode,
+      );
+      expect((await account.access()).shops, hasLength(1));
+      dir.members
+              .firstWhere((m) => m.phone == SampleDirectory.shopPhone)
+              .active =
+          false;
+      expect((await account.access()).isRegistered, isFalse);
+    });
+
+    test('fitment reads in plain words', () {
+      const p = PartListing(
+        id: 'x',
+        shopId: 's',
+        title: 'Pads',
+        priceKes: 1,
+        stockQty: 1,
+        makes: ['Toyota'],
+        models: 'Probox',
+        yearFrom: 2014,
+        yearTo: 2022,
+      );
+      expect(p.fitment, 'Toyota Probox · 2014–2022');
+      const any = PartListing(
+        id: 'y',
+        shopId: 's',
+        title: 'Oil',
+        priceKes: 1,
+        stockQty: 1,
+      );
+      expect(any.fitment, 'Fits all makes');
+      expect(kes(19000), 'KES 19,000');
+    });
+  });
+
   test('normalizeKenyanPhone accepts common formats and rejects others', () {
     expect(normalizeKenyanPhone('0712 345 678'), '+254712345678');
     expect(normalizeKenyanPhone('712345678'), '+254712345678');
@@ -752,4 +1045,24 @@ class _FakeCodes implements DevCodesRepository {
       ),
     ];
   }
+}
+
+Future<void> openTradeArea(WidgetTester tester) async {
+  await tester.ensureVisible(find.byKey(const Key('home-provider')));
+  await tester.pumpAndSettle();
+  await tester.tap(find.byKey(const Key('home-provider')));
+  await tester.pumpAndSettle();
+}
+
+/// Signs in on the trade sign-in screen with the sample code.
+Future<void> signIn(WidgetTester tester, String phone) async {
+  await tester.enterText(find.byKey(const Key('phone')), phone);
+  await tester.tap(find.byKey(const Key('send-code')));
+  await tester.pumpAndSettle();
+  await tester.enterText(
+    find.byKey(const Key('code')),
+    SampleAccountRepository.sampleCode,
+  );
+  await tester.tap(find.byKey(const Key('verify-code')));
+  await tester.pumpAndSettle();
 }

@@ -16,7 +16,12 @@ Every screen is tested against one question: does this make the owner do more?
 - Two actions on the home screen: **Find me a mechanic** and **Browse and call**.
 - Calling is never blocked by sign-up, booking or payment.
 - The mechanic diagnoses, not the app. Note, photo and voice note are optional.
-- Spare parts will be a **mechanic-only B2B marketplace** (Phase 3). Owners never see a parts catalogue.
+- **No self-onboarding (19 Nov 2026).** Only an admin adds garages, mobile mechanics and parts
+  shops, with the phone numbers of their people. Signing in links a person to what they were
+  added to; an unknown number gets nothing. Sign-in itself stays open because car owners need it.
+- Spare parts are a **trade-only marketplace**: only approved garages and mechanics (and their
+  helpers), parts shop owners and workers, and admins can see it. Owners never see a parts catalogue.
+  Built ahead of the Phase 3 gate at the project owner's request (19 Nov 2026).
 - Insurance is an optional later pathway, not part of the MVP.
 - Paying in the app is optional for the owner; money is held until the job is confirmed (Phase 2).
 - Stack: Flutter (one codebase) + Supabase (Postgres, PostGIS, Auth, Storage). Payments: IntaSend first, own Daraja paybill later.
@@ -25,18 +30,25 @@ Every screen is tested against one question: does this make the owner do more?
 
 ## Phases
 
-1. **Find and call** — owner app, mechanic sign-up and availability, verification, admin console.
+1. **Find and call** — owner app, admin onboarding of mechanics, availability, verification, admin console.
 2. **Match, quote, pay** — owner phone sign-in, live matching, itemised quotes, M-Pesa, reviews, complaints.
 3. **Parts for mechanics** — supplier portal, fitment, mechanic ordering.
 
 Gates: 90 verified providers live before Phase 2; 300 paid jobs in the pilot before Phase 3.
 
-## State of the build (12 Nov 2026)
+## State of the build (19 Nov 2026)
 
-Built and covered by tests (31 passing), on sample data:
+Admin-only onboarding and the parts marketplace (19 Nov, branch `feature/admin-onboarding-parts`):
+admin adds mechanics, garages and parts shops and their people; the listing application form
+is gone; shops list parts and handle orders; mechanics search, call and order. Migration
+`20261119000000_admin_onboarding_parts.sql` with its own SQL test file; 41 Flutter tests pass.
+**Not yet applied to the live Supabase project.** Not tested against real Supabase or on a phone.
+
+Built and covered by tests, on sample data:
 owner home, browse, tap to call, mechanic profile, find-me best match with optional photo
-and voice note, mechanic phone sign-in, listing application, document upload,
-availability switch, admin console, mechanic inbox (note, photo, voice note, take or pass).
+and voice note, phone sign-in for trade people, admin onboarding, document upload,
+availability switch, admin console, mechanic inbox (note, photo, voice note, take or pass),
+parts search, ordering and shop order handling.
 
 Owner app redesign (12 Nov): forest green and lime look, main button low on the screen,
 confirm before a request is sent, waiting screen, My repair, safety sheet with emergency
@@ -45,9 +57,10 @@ Rules are in `docs/DESIGN.md`; the proposal with research is at
 https://claude.ai/artifact/SngcAzUst8vE8KrQKrBQrU. Mechanic and admin screens took the new
 colours but not new layouts.
 
-Database: eight migrations in `supabase/migrations/`. The access rules are tested on a
+Database: nine migrations in `supabase/migrations/`. The access rules are tested on a
 local Postgres with a stand-in for Supabase auth and storage: `supabase/tests/run.sh`
-(four SQL test files: inbox rules, mock SMS, owner request status, test codes link).
+(five SQL test files: admin onboarding and parts, inbox rules, mock SMS, owner request
+status, test codes link).
 
 **Supabase project:** `lfgpmngtlypwyvpqytrz` (Frankfurt, free plan), URL
 `https://lfgpmngtlypwyvpqytrz.supabase.co`. All eight migrations applied by 13 Nov 2026 and
@@ -72,7 +85,11 @@ outdoors.
 in the database). Owners give no phone number, so the mechanic waits for the owner's call.
 Nothing limits how many requests a guest can send.
 
-**Next build items:** test the owner flow with five car owners on their own phones; then
+**Parts marketplace gaps:** no in-app payment or delivery; the app orders one part at a time;
+no notification to the shop when an order arrives (shops refresh the Orders tab).
+
+**Next build items:** apply the 19 Nov migration to the live project and onboard the first real
+garage and parts shop through the admin console; test the owner flow with five car owners on their own phones; then
 Phase 2, starting with owner phone sign-in and live matching (re-send a passed-on request
 to the next best match).
 

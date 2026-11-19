@@ -93,16 +93,31 @@ Never put the `service_role` key in the app.
 - Stale "Available" shows as "Availability not confirmed"
 - Design rules and colours: `docs/DESIGN.md`
 - Database: tables, `nearby_providers` PostGIS function, row-level security
-- Mechanic side ("I'm a mechanic or garage" on the home screen): phone sign-in,
-  listing application, and the Available / Busy / Offline switch. "Available"
-  expires after 4 hours, set by the server clock.
+- No self-onboarding. An admin adds every garage, mobile mechanic and parts
+  shop in the admin console, with the phone numbers of the people who work
+  there. A person signs in ("For mechanics, garages and parts shops" on the
+  home screen) with that number and is linked to what they were added to. A
+  number nobody added sees "This number is not registered" and nothing else.
+- Mechanic side: the Available / Busy / Offline switch. "Available" expires
+  after 4 hours, set by the server clock.
 
-- Verification documents: a provider uploads ID photos to a private storage
-  bucket; only the provider and admins can open them
-- Admin console: sign in as an admin, tick each check, approve or pause a
-  listing. Nobody can be approved before the identity check is passed. To make
-  an admin, see the top of `supabase/migrations/20261111000000_verification_admin.sql`.
-  In sample mode, sign in as 0700 000 000 with code 123456.
+- Verification documents: the admin (or the provider) uploads ID photos to a
+  private storage bucket; only the provider and admins can open them
+- Admin console: two tabs. **Mechanics & garages**: add one, tick each check,
+  approve or pause it, add helpers under People. **Parts shops**: add a shop
+  and its owner, add workers, pause a shop. Nobody can be approved before the
+  identity check is passed. Switching a person off removes their access. To
+  make an admin, see the top of `supabase/migrations/20261111000000_verification_admin.sql`.
+- Spare parts marketplace, trade only: approved garages and mechanics (and
+  their helpers) search parts by name, number and car make, nearest shop
+  first, call the shop or order. Shops (owners and workers) list parts with
+  price, stock and fitment, and move orders on: confirmed → ready → collected.
+  Stock is held when an order is placed and given back if it is cancelled.
+  Payment is between buyer and shop for now. Car owners and guests never see
+  any of it; the database refuses them.
+- Sample mode numbers (code 123456): 0700 000 000 admin, 0711 000 001 a live
+  mechanic, 0711 000 002 a parts shop. What the admin adds in sample mode can
+  be signed in to straight away.
 
 - Find me a mechanic accepts an optional photo and a voice note (up to 60
   seconds), stored privately; only the sender, the assigned mechanic and admins
@@ -127,7 +142,8 @@ supabase/tests/run.sh
 ## Not built yet
 
 - Phone sign-in for owners, quotes, M-Pesa payments, reviews (Phase 2)
-- Mechanic-only parts marketplace (Phase 3)
+- Paying for parts in the app, delivery, orders with several parts from one shop
+  (the database already accepts several; the app sends one)
 
 ## Layout
 
@@ -137,5 +153,5 @@ lib/data/        repositories (Supabase + sample), launch zones
 lib/state/       Riverpod providers, location, matching rules
 lib/ui/          screens and widgets
 supabase/        migrations, seed SQL, and SQL rule tests
-test/            ranking, owner, mechanic, inbox, admin and layout tests
+test/            ranking, owner, mechanic, inbox, admin, parts and layout tests
 ```
