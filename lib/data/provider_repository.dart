@@ -10,6 +10,15 @@ typedef Attachment = ({Uint8List bytes, String mime});
 
 enum ContactKind { profileView, callTap, callHelped, callNotHelped }
 
+/// The request was refused by a limit (too many open, too many today, or the
+/// mechanic has too many waiting). [message] says what the owner can do.
+class RequestLimitException implements Exception {
+  RequestLimitException(this.message);
+  final String message;
+  @override
+  String toString() => message;
+}
+
 /// Everything the owner app needs from the backend.
 abstract class ProviderRepository {
   /// Verified providers near a point, really-available first, then nearest.
@@ -36,6 +45,10 @@ abstract class ProviderRepository {
 
   /// The owner's latest open request, or null. For "My repair".
   Future<OwnerRequest?> myOpenRequest();
+
+  /// After 5 minutes with no answer, asks for the request to go to the next
+  /// free mechanic. True when it moved. The server checks the 5 minutes.
+  Future<bool> nudgeRequest(String requestId);
 
   /// The owner cancels their own request.
   Future<void> cancelRequest(String requestId);
@@ -116,16 +129,23 @@ class SupabaseProviderRepository implements ProviderRepository {
 
     final photoPath = await put(photo, 'photo');
     final voicePath = await put(voice, 'voice');
-    await _client.from('service_requests').insert({
-      'photo_path': photoPath,
-      'voice_path': voicePath,
-      'user_id': uid,
-      'provider_id': providerId,
-      'mode': mode == RequestMode.comeToMe ? 'come_to_me' : 'visit_garage',
-      'location': 'SRID=4326;POINT($lng $lat)',
-      'area': area,
-      'note': (note == null || note.trim().isEmpty) ? null : note.trim(),
-    });
+    try {
+      await _client.from('service_requests').insert({
+        'photo_path': photoPath,
+        'voice_path': voicePath,
+        'user_id': uid,
+        'provider_id': providerId,
+        'mode': mode == RequestMode.comeToMe ? 'come_to_me' : 'visit_garage',
+        'location': 'SRID=4326;POINT($lng $lat)',
+        'area': area,
+        'note': (note == null || note.trim().isEmpty) ? null : note.trim(),
+      });
+    } on PostgrestException catch (e) {
+      if (e.message.startsWith('LIMIT: ')) {
+        throw RequestLimitException(e.message.substring(7));
+      }
+      rethrow;
+    }
   }
 
   @override
@@ -141,6 +161,11 @@ class SupabaseProviderRepository implements ProviderRepository {
   Future<void> cancelRequest(String requestId) async {
     await _client.rpc('cancel_my_request', params: {'p_request': requestId});
   }
+
+  @override
+  Future<bool> nudgeRequest(String requestId) async =>
+      await _client.rpc('nudge_my_request', params: {'p_request': requestId})
+          as bool;
 }
 
 /// Built-in sample data, used until Supabase keys are supplied.
@@ -166,18 +191,7 @@ class SampleProviderRepository implements ProviderRepository {
   void mechanicPasses() {
     final r = _open!;
     if (r.providerId != null) _declined.add(r.providerId!);
-    final next = r.rematchCount >= 3
-        ? null
-        : _ranked(_lat, _lng).where((p) {
-            if (_declined.contains(p.id)) return false;
-            if (p.availability == Availability.busy ||
-                p.availability == Availability.offline) {
-              return false;
-            }
-            return r.mode == RequestMode.comeToMe
-                ? p.canComeToOwner
-                : !p.isMobile;
-          }).firstOrNull;
+    final next = _next(r);
     _open = next == null
         ? _with(r, provider: null, respondedAt: DateTime.now())
         : _with(
@@ -185,7 +199,55 @@ class SampleProviderRepository implements ProviderRepository {
             provider: next,
             assignedAt: DateTime.now(),
             rematchCount: r.rematchCount + 1,
+            handoff: Handoff.passed,
           );
+  }
+
+  /// The next best free mechanic who has not had this request.
+  ServiceProvider? _next(OwnerRequest r) => r.rematchCount >= 3
+      ? null
+      : _ranked(_lat, _lng).where((p) {
+          if (_declined.contains(p.id) || p.id == r.providerId) return false;
+          if (p.availability == Availability.busy ||
+              p.availability == Availability.offline) {
+            return false;
+          }
+          return r.mode == RequestMode.comeToMe
+              ? p.canComeToOwner
+              : !p.isMobile;
+        }).firstOrNull;
+
+  /// Test hook: pretend the current mechanic got the request [by] ago.
+  void ageRequest(Duration by) {
+    final r = _open!;
+    _open = _with(r, assignedAt: r.waitingSince.subtract(by));
+  }
+
+  /// Requests sent in sample mode, for the daily limit.
+  final List<DateTime> _sent = [];
+
+  @override
+  Future<bool> nudgeRequest(String requestId) async {
+    final r = _open;
+    if (r == null ||
+        r.id != requestId ||
+        r.accepted ||
+        r.providerId == null ||
+        DateTime.now().difference(r.waitingSince) <
+            const Duration(minutes: 5)) {
+      return false;
+    }
+    final next = _next(r);
+    if (next == null) return false;
+    _declined.add(r.providerId!);
+    _open = _with(
+      r,
+      provider: next,
+      assignedAt: DateTime.now(),
+      rematchCount: r.rematchCount + 1,
+      handoff: Handoff.noAnswer,
+    );
+    return true;
   }
 
   final Set<String> _declined = {};
@@ -201,6 +263,7 @@ class SampleProviderRepository implements ProviderRepository {
     DateTime? respondedAt,
     DateTime? assignedAt,
     int? rematchCount,
+    Handoff? handoff,
   }) {
     final p = provider == _keep ? null : provider as ServiceProvider?;
     final keep = provider == _keep;
@@ -222,6 +285,7 @@ class SampleProviderRepository implements ProviderRepository {
       calloutFeeKes: keep ? r.calloutFeeKes : p?.calloutFeeKes,
       assignedAt: assignedAt ?? r.assignedAt,
       rematchCount: rematchCount ?? r.rematchCount,
+      handoff: handoff ?? r.handoff,
     );
   }
 
@@ -449,6 +513,14 @@ class SampleProviderRepository implements ProviderRepository {
     Attachment? photo,
     Attachment? voice,
   }) async {
+    final dayAgo = DateTime.now().subtract(const Duration(days: 1));
+    _sent.removeWhere((t) => t.isBefore(dayAgo));
+    if (_sent.length >= 6) {
+      throw RequestLimitException(
+        'You have sent many requests today. You can still call a mechanic from Browse and call.',
+      );
+    }
+    _sent.add(DateTime.now());
     requests.add(mode);
     lastAttachments = (photo: photo != null, voice: voice != null);
     _declined.clear();

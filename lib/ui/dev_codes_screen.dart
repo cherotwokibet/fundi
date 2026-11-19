@@ -26,6 +26,7 @@ class DevCodesScreen extends ConsumerStatefulWidget {
 class _State extends ConsumerState<DevCodesScreen> {
   Timer? timer;
   List<DevCode>? codes;
+  List<DevMessage> messages = const [];
   bool refused = false;
 
   @override
@@ -43,10 +44,15 @@ class _State extends ConsumerState<DevCodesScreen> {
 
   Future<void> _load() async {
     try {
-      final list = await ref.read(devCodesProvider).latest(widget.codesKey);
+      final repo = ref.read(devCodesProvider);
+      final list = await repo.latest(widget.codesKey);
+      final texts = await repo
+          .messages(widget.codesKey)
+          .catchError((_) => const <DevMessage>[]);
       if (mounted) {
         setState(() {
           codes = list;
+          messages = texts;
           refused = false;
         });
       }
@@ -152,6 +158,22 @@ class _State extends ConsumerState<DevCodesScreen> {
                   ),
                   const SizedBox(height: 10),
                 ],
+              if (messages.isNotEmpty) ...[
+                const SizedBox(height: 12),
+                Text('Text alerts', style: heading(20)),
+                const Text(
+                  'What mechanics, shops and buyers would get by SMS. Not sent while SMS is mocked.',
+                  style: TextStyle(color: muted, fontSize: 13),
+                ),
+                const SizedBox(height: 8),
+                for (final m in messages)
+                  Card(
+                    child: ListTile(
+                      title: Text(m.body),
+                      subtitle: Text('To ${m.phone} · ${agoText(m.createdAt)}'),
+                    ),
+                  ),
+              ],
               const SizedBox(height: 12),
               BigButton(
                 key: const Key('codes-open-app'),

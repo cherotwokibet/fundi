@@ -33,9 +33,39 @@ class _State extends ConsumerState<RequestStatusScreen> {
   void initState() {
     super.initState();
     // Only while this screen is open, so it costs no data in the background.
-    poll = Timer.periodic(RequestStatusScreen.checkEvery, (_) {
-      if (mounted) ref.invalidate(openRequestProvider);
+    poll = Timer.periodic(RequestStatusScreen.checkEvery, (_) async {
+      if (!mounted) return;
+      try {
+        final fresh = await ref.refresh(openRequestProvider.future);
+        if (mounted) await _maybeSendOn(fresh);
+      } catch (_) {
+        // Shown on screen by the provider's error state.
+      }
     });
+  }
+
+  /// The assignment we already asked to move, so we ask once per mechanic.
+  DateTime? _nudged;
+
+  /// After 5 minutes with no answer, ask for the request to go to the next
+  /// free mechanic. The owner does nothing; the server checks the time.
+  Future<void> _maybeSendOn(OwnerRequest? r) async {
+    if (r == null ||
+        r.accepted ||
+        r.providerId == null ||
+        r.rematchCount >= 3 ||
+        _nudged == r.waitingSince ||
+        DateTime.now().difference(r.waitingSince) <
+            RequestStatusScreen.suggestOthersAfter) {
+      return;
+    }
+    _nudged = r.waitingSince;
+    try {
+      final moved = await ref.read(repositoryProvider).nudgeRequest(r.id);
+      if (moved && mounted) ref.invalidate(openRequestProvider);
+    } catch (_) {
+      // The owner can still call or pick someone else themselves.
+    }
   }
 
   @override
@@ -179,9 +209,13 @@ class _State extends ConsumerState<RequestStatusScreen> {
     ].join(', ');
     return _layout(
       title: 'Waiting for confirmation',
-      subtitle: r.wasResent
-          ? 'The first mechanic couldn\'t take it, so we sent your request to $name.'
-          : '$name has your request.',
+      subtitle: switch (r.handoff) {
+        Handoff.passed =>
+          'The last mechanic couldn\'t take it, so we sent your request to $name.',
+        Handoff.noAnswer =>
+          'The last mechanic didn\'t answer, so we sent your request to $name.',
+        Handoff.first => '$name has your request.',
+      },
       badge: const _Badge(icon: Icons.schedule_rounded),
       children: [
         _Step(

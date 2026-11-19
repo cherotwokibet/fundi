@@ -112,6 +112,18 @@ enum RequestMode { comeToMe, visitGarage }
 
 enum OwnerRequestStatus { waiting, accepted }
 
+/// Why the current mechanic has the request.
+enum Handoff {
+  /// The owner picked them.
+  first,
+
+  /// The mechanic before them said they can't take it.
+  passed,
+
+  /// The mechanic before them did not answer within 5 minutes.
+  noAnswer,
+}
+
 /// The owner's own open request, for "My repair" and the waiting screen.
 class OwnerRequest {
   const OwnerRequest({
@@ -130,6 +142,7 @@ class OwnerRequest {
     this.calloutFeeKes,
     this.assignedAt,
     this.rematchCount = 0,
+    this.handoff = Handoff.first,
   });
   final String id;
   final RequestMode mode;
@@ -150,8 +163,10 @@ class OwnerRequest {
   /// When the current mechanic got the request.
   final DateTime? assignedAt;
 
-  /// How many times the request was sent on after a mechanic passed.
+  /// How many times the request was sent on to another mechanic.
   final int rematchCount;
+
+  final Handoff handoff;
 
   /// The owner's wait starts again each time the request is sent on.
   DateTime get waitingSince => assignedAt ?? createdAt;
@@ -190,6 +205,11 @@ class OwnerRequest {
         ? null
         : DateTime.parse(r['assigned_at'] as String).toLocal(),
     rematchCount: (r['rematch_count'] as num?)?.toInt() ?? 0,
+    handoff: switch (r['handoff']) {
+      'passed' => Handoff.passed,
+      'no_answer' => Handoff.noAnswer,
+      _ => Handoff.first,
+    },
   );
 }
 

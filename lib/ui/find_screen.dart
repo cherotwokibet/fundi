@@ -173,6 +173,8 @@ class _State extends ConsumerState<FindScreen> {
       navigator.pushReplacement(
         MaterialPageRoute<void>(builder: (_) => const RequestStatusScreen()),
       );
+    } on RequestLimitException catch (e) {
+      messenger.showSnackBar(SnackBar(content: Text(e.message)));
     } catch (_) {
       messenger.showSnackBar(
         SnackBar(

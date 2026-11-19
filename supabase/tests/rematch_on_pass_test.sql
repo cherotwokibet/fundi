@@ -164,6 +164,8 @@ select pg_temp.check((select rematch_count = 3 and cardinality(declined_provider
 -- Accepting still works on a re-sent request.
 select pg_temp.as_user('00000000-0000-0000-0000-0000000005d1');
 set role authenticated;
+-- (An owner can have two requests open; the first one is done with.)
+select public.cancel_my_request('60000000-0000-0000-0000-000000000001');
 insert into public.service_requests (id, user_id, provider_id, mode, location, area)
 values ('60000000-0000-0000-0000-000000000003', '00000000-0000-0000-0000-0000000005d1',
         '70000000-0000-0000-0000-000000000005', 'visit_garage', 'SRID=4326;POINT(36.9000 -1.2200)', 'Kasarani');

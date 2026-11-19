@@ -292,6 +292,54 @@ void main() {
       expect(dialed.last, second.providerPhone);
     });
 
+    testWidgets('waiting: no answer for 5 minutes, the request goes to the '
+        'next free mechanic by itself', (tester) async {
+      await pumpApp(tester);
+      await findMatch(tester);
+      await tester.tap(find.byKey(const Key('request-mechanic')));
+      await tester.pumpAndSettle();
+      final first = (await repo.myOpenRequest())!;
+
+      // Not yet 5 minutes: nothing moves.
+      await tester.pump(RequestStatusScreen.checkEvery);
+      await tester.pumpAndSettle();
+      expect((await repo.myOpenRequest())!.providerId, first.providerId);
+
+      repo.ageRequest(const Duration(minutes: 6));
+      await tester.pump(RequestStatusScreen.checkEvery);
+      await tester.pumpAndSettle();
+      final second = (await repo.myOpenRequest())!;
+      expect(second.providerId, isNot(first.providerId));
+      expect(second.handoff, Handoff.noAnswer);
+      expect(
+        find.textContaining(
+          'didn\'t answer, so we sent your request to ${second.providerName}',
+        ),
+        findsOneWidget,
+      );
+      // The wait starts again for the new mechanic.
+      expect(find.text('This screen updates by itself.'), findsOneWidget);
+    });
+
+    testWidgets('too many requests in a day: the owner is told plainly and '
+        'can still call', (tester) async {
+      await pumpApp(tester);
+      for (var i = 0; i < 6; i++) {
+        await repo.createRequest(
+          mode: RequestMode.comeToMe,
+          lat: -1.22,
+          lng: 36.9,
+        );
+      }
+      await repo.cancelRequest((await repo.myOpenRequest())!.id);
+      await findMatch(tester);
+      await tester.tap(find.byKey(const Key('request-mechanic')));
+      await tester.pumpAndSettle();
+      expect(find.textContaining('many requests today'), findsOneWidget);
+      // Still on the match, with the call button.
+      expect(find.byKey(const Key('request-mechanic')), findsOneWidget);
+    });
+
     testWidgets('waiting: when nobody else is free, the owner is pointed to '
         'mechanics nearby', (tester) async {
       await pumpApp(tester);
@@ -1038,6 +1086,13 @@ void main() {
     expect(find.text('Test sign-in codes'), findsOneWidget);
     expect(find.text('+254712333444'), findsOneWidget);
     expect(find.text('775991'), findsOneWidget);
+    expect(find.text('Text alerts'), findsOneWidget);
+    expect(
+      find.textContaining('New repair request near Thika'),
+      findsOneWidget,
+    );
+    await tester.ensureVisible(find.byKey(const Key('codes-open-app')));
+    await tester.pumpAndSettle();
     await tester.tap(find.byKey(const Key('codes-open-app')));
     await tester.pumpAndSettle();
     expect(find.text('Find me a mechanic'), findsOneWidget);
@@ -1196,7 +1251,7 @@ class _FakePlayer implements VoicePlayer {
   Future<void> stop() async {}
 }
 
-class _FakeCodes implements DevCodesRepository {
+class _FakeCodes extends DevCodesRepository {
   @override
   Future<List<DevCode>> latest(String key) async {
     if (key != 'a-long-test-key-0123456789') throw Exception('Not allowed');
@@ -1208,6 +1263,16 @@ class _FakeCodes implements DevCodesRepository {
       ),
     ];
   }
+
+  @override
+  Future<List<DevMessage>> messages(String key) async => [
+    (
+      phone: '+254700000901',
+      body:
+          'New repair request near Thika: the owner wants you to come to them.',
+      createdAt: DateTime.now(),
+    ),
+  ];
 }
 
 Future<void> openTradeArea(WidgetTester tester) async {

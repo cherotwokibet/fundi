@@ -36,7 +36,18 @@ Every screen is tested against one question: does this make the owner do more?
 
 Gates: 90 verified providers live before Phase 2; 300 paid jobs in the pilot before Phase 3.
 
-## State of the build (19 Nov 2026, evening)
+## State of the build (19 Nov 2026, night)
+
+Night of 19 Nov, three more migrations on the same branch:
+- `20261120010000_pin_search_path.sql` (security advisor fix) — **applied live**.
+- `20261120020000_request_limits_and_no_answer.sql` — per account at most 2 open requests and
+  6 a day; a mechanic with 5 waiting gets no more; after 5 minutes with no answer the owner's
+  waiting screen has the request sent on to the next free mechanic (server checks the time).
+- `20261120030000_sms_alerts.sql` — texts queued in `sms_outbox` for: a mechanic getting a
+  request, a shop getting an order, a buyer's order confirmed / ready / cancelled. Not sent
+  yet; testers see them on the test codes page under "Text alerts".
+The last two are **not applied live yet**. 46 Flutter tests and eight SQL test files pass.
+
 
 Re-matching (migration `20261120000000_rematch_on_pass.sql`, own SQL test): a passed-on
 request goes to the next best free mechanic by itself, up to three times; the owner's
@@ -88,14 +99,14 @@ application, document upload to private storage, admin approval.
 voice-note playback on a real phone, any Android or iOS build, and real owners using it
 outdoors.
 
-**Known gaps:** a request with no answer is not re-matched after a timeout; only a pass
-re-matches it (the owner is pointed to someone else after 5 minutes). Owners give no phone number, so the mechanic waits for the owner's call.
-Nothing limits how many requests a guest can send.
+**Known gaps:** a no-answer request is only sent on while the owner's waiting screen is
+open (no server timer yet). Owners give no phone number, so the mechanic waits for the
+owner's call.
 
-**Parts marketplace gaps:** no in-app payment or delivery; new orders show only while the
-shop has the app open (no push or SMS alert yet).
+**Parts marketplace gaps:** no in-app payment or delivery. SMS alerts are queued but nothing
+sends them until a real SMS provider is connected (an Edge Function reading `sms_outbox`).
 
-**Next build items:** apply the 19 and 20 Nov migrations to the live project and onboard the first real
+**Next build items:** apply the remaining 20 Nov migrations to the live project, connect an SMS provider for sign-in codes and alerts, and onboard the first real
 garage and parts shop through the admin console; test the owner flow with five car owners on their own phones; then
 Phase 2, starting with owner phone sign-in and quotes.
 

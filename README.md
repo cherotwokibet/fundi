@@ -134,7 +134,14 @@ Never put the `service_role` key in the app.
   the next best free mechanic (approved, identity checked, not busy or
   offline, within reach; available first, then nearest), at most three times.
   The owner's waiting screen says who has it now and restarts its timer. Only
-  when nobody fits does the owner see mechanics nearby.
+  when nobody fits does the owner see mechanics nearby. After 5 minutes with no
+  answer, the waiting screen has the request sent on the same way.
+- Limits: at most 2 open requests and 6 a day per account; a mechanic with 5
+  waiting requests gets no more. The owner is told plainly and can still call.
+- Text alerts: a mechanic getting a request, a shop getting an order, and a
+  buyer whose order is confirmed, ready or cancelled get a text. Texts queue in
+  `sms_outbox`; nothing sends them until an SMS provider is connected. Testers
+  see them on the test codes page.
 
 ## Test the database rules
 
