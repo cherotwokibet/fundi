@@ -53,11 +53,10 @@ class SampleMemberRecord {
 }
 
 class SampleOrderRecord {
-  SampleOrderRecord(this.order, this.buyerId, this.listingId, this.qty);
+  SampleOrderRecord(this.order, this.buyerId, this.lines);
   PartsOrder order;
   final String buyerId;
-  final String listingId;
-  final int qty;
+  final List<OrderLine> lines;
 }
 
 /// In-memory stand-in for the database, shared by the sample account,

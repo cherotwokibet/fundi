@@ -36,13 +36,20 @@ Every screen is tested against one question: does this make the owner do more?
 
 Gates: 90 verified providers live before Phase 2; 300 paid jobs in the pilot before Phase 3.
 
-## State of the build (19 Nov 2026)
+## State of the build (19 Nov 2026, evening)
+
+Re-matching (migration `20261120000000_rematch_on_pass.sql`, own SQL test): a passed-on
+request goes to the next best free mechanic by itself, up to three times; the owner's
+waiting screen says who has it now. Parts: several parts from one shop in one order, and
+the shop's Orders tab refreshes every 30 seconds with a count of new orders. 44 Flutter
+tests and six SQL test files pass. Same branch, `feature/admin-onboarding-parts`.
+
 
 Admin-only onboarding and the parts marketplace (19 Nov, branch `feature/admin-onboarding-parts`):
 admin adds mechanics, garages and parts shops and their people; the listing application form
 is gone; shops list parts and handle orders; mechanics search, call and order. Migration
 `20261119000000_admin_onboarding_parts.sql` with its own SQL test file; 41 Flutter tests pass.
-**Not yet applied to the live Supabase project.** Not tested against real Supabase or on a phone.
+**Neither the 19 Nov nor the 20 Nov migration is applied to the live Supabase project yet.** Not tested against real Supabase or on a phone.
 
 Built and covered by tests, on sample data:
 owner home, browse, tap to call, mechanic profile, find-me best match with optional photo
@@ -81,17 +88,16 @@ application, document upload to private storage, admin approval.
 voice-note playback on a real phone, any Android or iOS build, and real owners using it
 outdoors.
 
-**Known gaps:** a passed-on request is not re-matched automatically yet (an admin can re-send it
-in the database). Owners give no phone number, so the mechanic waits for the owner's call.
+**Known gaps:** a request with no answer is not re-matched after a timeout; only a pass
+re-matches it (the owner is pointed to someone else after 5 minutes). Owners give no phone number, so the mechanic waits for the owner's call.
 Nothing limits how many requests a guest can send.
 
-**Parts marketplace gaps:** no in-app payment or delivery; the app orders one part at a time;
-no notification to the shop when an order arrives (shops refresh the Orders tab).
+**Parts marketplace gaps:** no in-app payment or delivery; new orders show only while the
+shop has the app open (no push or SMS alert yet).
 
-**Next build items:** apply the 19 Nov migration to the live project and onboard the first real
+**Next build items:** apply the 19 and 20 Nov migrations to the live project and onboard the first real
 garage and parts shop through the admin console; test the owner flow with five car owners on their own phones; then
-Phase 2, starting with owner phone sign-in and live matching (re-send a passed-on request
-to the next best match).
+Phase 2, starting with owner phone sign-in and quotes.
 
 **Waiting on the owner of the project:** in Supabase, turn on phone sign-in and the mock
 SMS hook (development only; a real SMS provider before launch), and make the first admin; pick the brand name

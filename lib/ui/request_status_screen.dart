@@ -129,7 +129,9 @@ class _State extends ConsumerState<RequestStatusScreen> {
     if (r.passed) {
       return _layout(
         title: 'They can\'t take it',
-        subtitle: 'The mechanic you asked is not free right now.',
+        subtitle: r.wasResent
+            ? 'We tried ${r.rematchCount + 1} mechanics and none is free right now.'
+            : 'No other mechanic nearby is free right now.',
         badge: const _Badge(icon: Icons.swap_horiz_rounded),
         children: [
           BigButton(
@@ -168,7 +170,7 @@ class _State extends ConsumerState<RequestStatusScreen> {
       );
     }
 
-    final waited = DateTime.now().difference(r.createdAt);
+    final waited = DateTime.now().difference(r.waitingSince);
     final late = waited >= RequestStatusScreen.suggestOthersAfter;
     final sent = [
       if (r.hasNote) 'note',
@@ -177,7 +179,9 @@ class _State extends ConsumerState<RequestStatusScreen> {
     ].join(', ');
     return _layout(
       title: 'Waiting for confirmation',
-      subtitle: '$name has your request.',
+      subtitle: r.wasResent
+          ? 'The first mechanic couldn\'t take it, so we sent your request to $name.'
+          : '$name has your request.',
       badge: const _Badge(icon: Icons.schedule_rounded),
       children: [
         _Step(
@@ -187,6 +191,12 @@ class _State extends ConsumerState<RequestStatusScreen> {
               ? clockText(r.createdAt)
               : '${clockText(r.createdAt)} · with your $sent',
         ),
+        if (r.wasResent)
+          _Step(
+            done: true,
+            title: 'Sent to $name',
+            note: clockText(r.waitingSince),
+          ),
         _Step(
           done: false,
           title: 'Mechanic accepts',

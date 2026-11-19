@@ -47,25 +47,104 @@ class _MarketState extends ConsumerState<PartsMarketScreen> {
     super.dispose();
   }
 
-  Future<void> _order(PartListing part) async {
+  /// Parts picked for the next order, by part id. One shop at a time,
+  /// because one order is for one shop.
+  final Map<String, ({PartListing part, int qty})> basket = {};
+
+  String? get basketShop =>
+      basket.isEmpty ? null : basket.values.first.part.shopName;
+
+  int get basketTotal =>
+      basket.values.fold(0, (sum, l) => sum + l.part.priceKes * l.qty);
+
+  int get basketCount => basket.values.fold(0, (sum, l) => sum + l.qty);
+
+  Future<void> _add(PartListing part) async {
+    if (basket.isNotEmpty && basket.values.first.part.shopId != part.shopId) {
+      final fresh = await showDialog<bool>(
+        context: context,
+        builder: (dialog) => AlertDialog(
+          title: const Text('One shop per order'),
+          content: Text(
+            'Your order is with $basketShop. Start a new order with ${part.shopName}?',
+          ),
+          actions: [
+            TextButton(
+              key: const Key('basket-keep'),
+              onPressed: () => Navigator.pop(dialog, false),
+              child: const Text('Keep my order'),
+            ),
+            FilledButton(
+              key: const Key('basket-replace'),
+              onPressed: () => Navigator.pop(dialog, true),
+              child: const Text('Start a new order'),
+            ),
+          ],
+        ),
+      );
+      if (fresh != true) return;
+      basket.clear();
+    }
+    final now = basket[part.id]?.qty ?? 0;
+    if (now >= part.stockQty) {
+      if (mounted) {
+        ScaffoldMessenger.of(context)
+          ..hideCurrentSnackBar()
+          ..showSnackBar(
+            SnackBar(content: Text('Only ${part.stockQty} in stock.')),
+          );
+      }
+      return;
+    }
+    setState(() => basket[part.id] = (part: part, qty: now + 1));
+  }
+
+  Future<void> _review() async {
+    final shop = basketShop!;
     final sent = await showModalBottomSheet<bool>(
       context: context,
       constraints: sheetConstraints,
       isScrollControlled: true,
       showDragHandle: true,
-      builder: (_) => _OrderSheet(part: part, buyer: buyer!),
+      builder: (_) => _OrderSheet(
+        basket: basket,
+        buyer: buyer!,
+        onChanged: () => setState(() {}),
+      ),
     );
-    if (sent == true && mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Order sent to ${part.shopName}.')),
-      );
+    if (!mounted) return;
+    if (sent == true) {
+      basket.clear();
+      ScaffoldMessenger.of(context)
+        ..hideCurrentSnackBar()
+        ..showSnackBar(SnackBar(content: Text('Order sent to $shop.')));
       _search();
+    } else {
+      setState(() {});
     }
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      bottomNavigationBar: basket.isEmpty
+          ? null
+          : SafeArea(
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
+                child: FilledButton(
+                  key: const Key('basket-review'),
+                  style: FilledButton.styleFrom(
+                    minimumSize: const Size.fromHeight(54),
+                  ),
+                  onPressed: _review,
+                  child: Text(
+                    'Review order · $basketCount '
+                    '${basketCount == 1 ? 'part' : 'parts'} · ${kes(basketTotal)}',
+                  ),
+                ),
+              ),
+            ),
       appBar: AppBar(
         title: const Text('Spare parts'),
         actions: [
@@ -178,12 +257,14 @@ class _MarketState extends ConsumerState<PartsMarketScreen> {
                     );
                   }
                   return ListView.separated(
+                    key: const Key('parts-results'),
                     padding: const EdgeInsets.fromLTRB(16, 4, 16, 24),
                     itemCount: list.length,
                     separatorBuilder: (_, _) => const SizedBox(height: 10),
                     itemBuilder: (_, i) => _PartCard(
                       part: list[i],
-                      onOrder: buyer == null ? null : () => _order(list[i]),
+                      inBasket: basket[list[i].id]?.qty ?? 0,
+                      onOrder: buyer == null ? null : () => _add(list[i]),
                     ),
                   );
                 },
@@ -197,9 +278,16 @@ class _MarketState extends ConsumerState<PartsMarketScreen> {
 }
 
 class _PartCard extends ConsumerWidget {
-  const _PartCard({required this.part, required this.onOrder});
+  const _PartCard({
+    required this.part,
+    required this.onOrder,
+    this.inBasket = 0,
+  });
   final PartListing part;
   final VoidCallback? onOrder;
+
+  /// How many of this part are in the order being put together.
+  final int inBasket;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -276,12 +364,14 @@ class _PartCard extends ConsumerWidget {
                   const SizedBox(width: 10),
                   Expanded(
                     child: FilledButton(
-                      key: Key('order-${p.id}'),
+                      key: Key('add-${p.id}'),
                       style: FilledButton.styleFrom(
                         minimumSize: const Size.fromHeight(48),
                       ),
                       onPressed: onOrder,
-                      child: const Text('Order'),
+                      child: Text(
+                        inBasket == 0 ? 'Add to order' : 'Added ($inBasket)',
+                      ),
                     ),
                   ),
                 ],
@@ -328,16 +418,22 @@ class PartPhoto extends ConsumerWidget {
 }
 
 class _OrderSheet extends ConsumerStatefulWidget {
-  const _OrderSheet({required this.part, required this.buyer});
-  final PartListing part;
+  const _OrderSheet({
+    required this.basket,
+    required this.buyer,
+    required this.onChanged,
+  });
+
+  /// Edited in place, so the screen behind keeps the changes.
+  final Map<String, ({PartListing part, int qty})> basket;
   final Membership buyer;
+  final VoidCallback onChanged;
 
   @override
   ConsumerState<_OrderSheet> createState() => _OrderSheetState();
 }
 
 class _OrderSheetState extends ConsumerState<_OrderSheet> {
-  int qty = 1;
   final note = TextEditingController();
   bool busy = false;
   String? error;
@@ -346,6 +442,18 @@ class _OrderSheetState extends ConsumerState<_OrderSheet> {
   void dispose() {
     note.dispose();
     super.dispose();
+  }
+
+  void _set(PartListing part, int qty) {
+    setState(() {
+      if (qty <= 0) {
+        widget.basket.remove(part.id);
+      } else {
+        widget.basket[part.id] = (part: part, qty: qty);
+      }
+    });
+    widget.onChanged();
+    if (widget.basket.isEmpty) Navigator.pop(context, false);
   }
 
   Future<void> _send() async {
@@ -358,8 +466,10 @@ class _OrderSheetState extends ConsumerState<_OrderSheet> {
           .read(partsProvider)
           .placeOrder(
             buyerId: widget.buyer.orgId,
-            partId: widget.part.id,
-            qty: qty,
+            lines: [
+              for (final l in widget.basket.values)
+                (partId: l.part.id, qty: l.qty),
+            ],
             note: note.text.trim().isEmpty ? null : note.text.trim(),
           );
       if (mounted) Navigator.pop(context, true);
@@ -372,7 +482,9 @@ class _OrderSheetState extends ConsumerState<_OrderSheet> {
 
   @override
   Widget build(BuildContext context) {
-    final p = widget.part;
+    final lines = widget.basket.values.toList();
+    if (lines.isEmpty) return const SizedBox.shrink();
+    final total = lines.fold(0, (sum, l) => sum + l.part.priceKes * l.qty);
     return Padding(
       padding: EdgeInsets.fromLTRB(
         16,
@@ -384,43 +496,59 @@ class _OrderSheetState extends ConsumerState<_OrderSheet> {
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Text(p.title, style: heading(22)),
-          Text('${p.shopName} · ${kes(p.priceKes)} each'),
-          const SizedBox(height: 14),
-          Row(
-            children: [
-              const Text(
-                'How many',
-                style: TextStyle(fontWeight: FontWeight.w600),
-              ),
-              const Spacer(),
-              IconButton.outlined(
-                key: const Key('qty-minus'),
-                onPressed: qty > 1 ? () => setState(() => qty--) : null,
-                icon: const Icon(Icons.remove),
-              ),
-              SizedBox(
-                width: 44,
-                child: Text(
-                  '$qty',
-                  key: const Key('qty'),
-                  textAlign: TextAlign.center,
-                  style: const TextStyle(
-                    fontSize: 18,
-                    fontWeight: FontWeight.w700,
+          Text('Your order', style: heading(22)),
+          Text(lines.first.part.shopName),
+          const SizedBox(height: 10),
+          for (final l in lines)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 6),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          l.part.title,
+                          style: const TextStyle(fontWeight: FontWeight.w600),
+                        ),
+                        Text(
+                          '${kes(l.part.priceKes)} each',
+                          style: const TextStyle(fontSize: 13, color: muted),
+                        ),
+                      ],
+                    ),
                   ),
-                ),
+                  IconButton.outlined(
+                    key: Key('qty-minus-${l.part.id}'),
+                    onPressed: busy ? null : () => _set(l.part, l.qty - 1),
+                    icon: Icon(
+                      l.qty == 1 ? Icons.delete_outline : Icons.remove,
+                    ),
+                  ),
+                  SizedBox(
+                    width: 40,
+                    child: Text(
+                      '${l.qty}',
+                      key: Key('qty-${l.part.id}'),
+                      textAlign: TextAlign.center,
+                      style: const TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ),
+                  IconButton.outlined(
+                    key: Key('qty-plus-${l.part.id}'),
+                    onPressed: busy || l.qty >= l.part.stockQty
+                        ? null
+                        : () => _set(l.part, l.qty + 1),
+                    icon: const Icon(Icons.add),
+                  ),
+                ],
               ),
-              IconButton.outlined(
-                key: const Key('qty-plus'),
-                onPressed: qty < p.stockQty
-                    ? () => setState(() => qty++)
-                    : null,
-                icon: const Icon(Icons.add),
-              ),
-            ],
-          ),
-          const SizedBox(height: 12),
+            ),
+          const SizedBox(height: 8),
           TextField(
             key: const Key('order-note'),
             controller: note,
@@ -432,7 +560,7 @@ class _OrderSheetState extends ConsumerState<_OrderSheet> {
           ),
           const SizedBox(height: 12),
           Text(
-            'Total ${kes(p.priceKes * qty)}. Pay the shop when you collect.',
+            'Total ${kes(total)}. Pay the shop when you collect.',
             style: const TextStyle(fontWeight: FontWeight.w600),
           ),
           if (error != null)

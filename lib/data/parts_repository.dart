@@ -29,11 +29,11 @@ abstract class PartsRepository {
   /// A short-lived link to a part photo, or '' when there is none to show.
   Future<String> photoUrl(String path);
 
-  /// Orders [qty] of one part for a garage or mechanic listing.
+  /// Orders parts for a garage or mechanic listing. All [lines] must be
+  /// from one shop; the database refuses anything else.
   Future<String> placeOrder({
     required String buyerId,
-    required String partId,
-    required int qty,
+    required List<OrderLine> lines,
     String? note,
   });
 
@@ -131,8 +131,7 @@ class SupabasePartsRepository implements PartsRepository {
   @override
   Future<String> placeOrder({
     required String buyerId,
-    required String partId,
-    required int qty,
+    required List<OrderLine> lines,
     String? note,
   }) async {
     final id = await _guard(
@@ -141,7 +140,7 @@ class SupabasePartsRepository implements PartsRepository {
         params: {
           'p_provider': buyerId,
           'p_items': [
-            {'listing_id': partId, 'qty': qty},
+            for (final l in lines) {'listing_id': l.partId, 'qty': l.qty},
           ],
           'p_note': note,
         },
@@ -327,8 +326,7 @@ class SamplePartsRepository implements PartsRepository {
   @override
   Future<String> placeOrder({
     required String buyerId,
-    required String partId,
-    required int qty,
+    required List<OrderLine> lines,
     String? note,
   }) async {
     if (!directory.isMember(phone(), OrgKind.provider, buyerId)) {
@@ -336,13 +334,34 @@ class SamplePartsRepository implements PartsRepository {
         'Only people at an approved garage or mechanic listing can order parts',
       );
     }
-    final i = directory.parts.indexWhere((l) => l.id == partId);
-    final l = directory.parts[i];
-    if (l.stockQty < qty) {
-      throw AccountException('Only ${l.stockQty} left of ${l.title}');
+    if (lines.isEmpty) throw AccountException('Add at least one part');
+    final parts = [
+      for (final line in lines)
+        directory.parts.firstWhere((l) => l.id == line.partId),
+    ];
+    if (parts.map((p) => p.shopId).toSet().length > 1) {
+      throw AccountException('One order is for one shop');
     }
-    directory.parts[i] = _withStock(l, l.stockQty - qty);
-    final shop = _shop(l.shopId);
+    for (var i = 0; i < lines.length; i++) {
+      final l = parts[i];
+      if (!l.active) {
+        throw AccountException('A part in this order is no longer listed');
+      }
+      if (lines[i].qty < 1 || lines[i].qty > 100) {
+        throw AccountException('Quantity must be between 1 and 100');
+      }
+      if (l.stockQty < lines[i].qty) {
+        throw AccountException('Only ${l.stockQty} left of ${l.title}');
+      }
+    }
+    var total = 0;
+    for (var i = 0; i < lines.length; i++) {
+      final at = directory.parts.indexWhere((l) => l.id == lines[i].partId);
+      final l = directory.parts[at];
+      directory.parts[at] = _withStock(l, l.stockQty - lines[i].qty);
+      total += l.priceKes * lines[i].qty;
+    }
+    final shop = _shop(parts.first.shopId);
     final buyer = directory.listings.firstWhere((p) => p.id == buyerId);
     final id = 'o${++_seq}';
     directory.orders.insert(
@@ -356,16 +375,20 @@ class SamplePartsRepository implements PartsRepository {
           buyerName: buyer.name,
           buyerPhone: buyer.phone,
           status: OrderStatus.placed,
-          totalKes: l.priceKes * qty,
+          totalKes: total,
           createdAt: DateTime.now(),
           note: note,
           items: [
-            OrderItem(title: l.title, unitPriceKes: l.priceKes, qty: qty),
+            for (var i = 0; i < lines.length; i++)
+              OrderItem(
+                title: parts[i].title,
+                unitPriceKes: parts[i].priceKes,
+                qty: lines[i].qty,
+              ),
           ],
         ),
         buyerId,
-        partId,
-        qty,
+        lines,
       ),
     );
     return id;
@@ -425,9 +448,11 @@ class SamplePartsRepository implements PartsRepository {
     }
     o.order = o.order.withStatus(status);
     if (status == OrderStatus.cancelled) {
-      final i = directory.parts.indexWhere((l) => l.id == o.listingId);
-      final l = directory.parts[i];
-      directory.parts[i] = _withStock(l, l.stockQty + o.qty);
+      for (final line in o.lines) {
+        final i = directory.parts.indexWhere((l) => l.id == line.partId);
+        final l = directory.parts[i];
+        directory.parts[i] = _withStock(l, l.stockQty + line.qty);
+      }
     }
   }
 }

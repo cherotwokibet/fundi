@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -21,6 +23,9 @@ class ShopScreen extends ConsumerStatefulWidget {
   final String shopId;
   final String shopName;
 
+  /// While the screen is open, new orders are fetched this often.
+  static const checkEvery = Duration(seconds: 30);
+
   @override
   ConsumerState<ShopScreen> createState() => _ShopState();
 }
@@ -28,9 +33,36 @@ class ShopScreen extends ConsumerStatefulWidget {
 class _ShopState extends ConsumerState<ShopScreen> {
   late Future<List<PartsOrder>> orders = _loadOrders();
   late Future<List<PartListing>> parts = _loadParts();
+  Timer? _timer;
 
-  Future<List<PartsOrder>> _loadOrders() =>
-      ref.read(partsProvider).shopOrders(widget.shopId);
+  /// Orders still waiting for the shop to confirm them.
+  int waiting = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    _timer = Timer.periodic(ShopScreen.checkEvery, (_) {
+      if (!mounted) return;
+      final next = _loadOrders();
+      setState(() {
+        orders = next;
+      });
+    });
+  }
+
+  @override
+  void dispose() {
+    _timer?.cancel();
+    super.dispose();
+  }
+
+  Future<List<PartsOrder>> _loadOrders() async {
+    final list = await ref.read(partsProvider).shopOrders(widget.shopId);
+    final count = list.where((o) => o.status == OrderStatus.placed).length;
+    if (mounted && count != waiting) setState(() => waiting = count);
+    return list;
+  }
+
   Future<List<PartListing>> _loadParts() =>
       ref.read(partsProvider).shopParts(widget.shopId);
 
@@ -77,10 +109,13 @@ class _ShopState extends ConsumerState<ShopScreen> {
               child: const Text('Sign out'),
             ),
           ],
-          bottom: const TabBar(
+          bottom: TabBar(
             tabs: [
-              Tab(key: Key('shop-tab-orders'), text: 'Orders'),
-              Tab(key: Key('shop-tab-parts'), text: 'Our parts'),
+              Tab(
+                key: const Key('shop-tab-orders'),
+                text: waiting == 0 ? 'Orders' : 'Orders ($waiting new)',
+              ),
+              const Tab(key: Key('shop-tab-parts'), text: 'Our parts'),
             ],
           ),
         ),
@@ -167,7 +202,8 @@ class _FutureList<T> extends StatelessWidget {
     return FutureBuilder<List<T>>(
       future: future,
       builder: (context, snap) {
-        if (snap.connectionState != ConnectionState.done) {
+        // A background refresh keeps showing the last list.
+        if (!snap.hasData && snap.connectionState != ConnectionState.done) {
           return const Center(child: CircularProgressIndicator());
         }
         if (snap.hasError) {

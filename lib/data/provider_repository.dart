@@ -155,28 +155,75 @@ class SampleProviderRepository implements ProviderRepository {
   OwnerRequest? _open;
 
   /// Test hooks: what the sample mechanic does with the open request.
-  void mechanicAccepts() => _open = _copy(_open!, accepted: true);
-  void mechanicPasses() => _open = _copy(_open!, passed: true);
-
-  static OwnerRequest _copy(
-    OwnerRequest r, {
-    bool accepted = false,
-    bool passed = false,
-  }) => OwnerRequest(
-    id: r.id,
-    mode: r.mode,
-    status: accepted ? OwnerRequestStatus.accepted : r.status,
-    createdAt: r.createdAt,
-    respondedAt: accepted || passed ? DateTime.now() : r.respondedAt,
-    hasNote: r.hasNote,
-    hasPhoto: r.hasPhoto,
-    hasVoice: r.hasVoice,
-    providerId: passed ? null : r.providerId,
-    providerName: passed ? null : r.providerName,
-    providerPhone: passed ? null : r.providerPhone,
-    providerIsMobile: r.providerIsMobile,
-    calloutFeeKes: r.calloutFeeKes,
+  void mechanicAccepts() => _open = _with(
+    _open!,
+    status: OwnerRequestStatus.accepted,
+    respondedAt: DateTime.now(),
   );
+
+  /// The mechanic passes. Like the database, the request goes on to the
+  /// next best free mechanic who has not passed, at most three times.
+  void mechanicPasses() {
+    final r = _open!;
+    if (r.providerId != null) _declined.add(r.providerId!);
+    final next = r.rematchCount >= 3
+        ? null
+        : _ranked(_lat, _lng).where((p) {
+            if (_declined.contains(p.id)) return false;
+            if (p.availability == Availability.busy ||
+                p.availability == Availability.offline) {
+              return false;
+            }
+            return r.mode == RequestMode.comeToMe
+                ? p.canComeToOwner
+                : !p.isMobile;
+          }).firstOrNull;
+    _open = next == null
+        ? _with(r, provider: null, respondedAt: DateTime.now())
+        : _with(
+            r,
+            provider: next,
+            assignedAt: DateTime.now(),
+            rematchCount: r.rematchCount + 1,
+          );
+  }
+
+  final Set<String> _declined = {};
+  double _lat = 0;
+  double _lng = 0;
+
+  static const _keep = Object();
+
+  OwnerRequest _with(
+    OwnerRequest r, {
+    OwnerRequestStatus? status,
+    Object? provider = _keep,
+    DateTime? respondedAt,
+    DateTime? assignedAt,
+    int? rematchCount,
+  }) {
+    final p = provider == _keep ? null : provider as ServiceProvider?;
+    final keep = provider == _keep;
+    return OwnerRequest(
+      id: r.id,
+      mode: r.mode,
+      status: status ?? r.status,
+      createdAt: r.createdAt,
+      respondedAt: respondedAt ?? (assignedAt != null ? null : r.respondedAt),
+      hasNote: r.hasNote,
+      hasPhoto: r.hasPhoto,
+      hasVoice: r.hasVoice,
+      providerId: keep ? r.providerId : p?.id,
+      providerName: keep ? r.providerName : p?.name,
+      providerPhone: keep ? r.providerPhone : p?.phone,
+      providerIsMobile: keep
+          ? r.providerIsMobile
+          : (p?.isMobile ?? r.providerIsMobile),
+      calloutFeeKes: keep ? r.calloutFeeKes : p?.calloutFeeKes,
+      assignedAt: assignedAt ?? r.assignedAt,
+      rematchCount: rematchCount ?? r.rematchCount,
+    );
+  }
 
   // Minutes since each sample mechanic "set" their availability.
   static const _setMinutesAgo = {
@@ -360,7 +407,13 @@ class SampleProviderRepository implements ProviderRepository {
     required double lat,
     required double lng,
     double radiusKm = 10,
-  }) async {
+  }) async => _ranked(lat, lng, radiusKm: radiusKm);
+
+  List<ServiceProvider> _ranked(
+    double lat,
+    double lng, {
+    double radiusKm = 10,
+  }) {
     final list = [
       for (final p in _all)
         p.copyWith(
@@ -398,6 +451,9 @@ class SampleProviderRepository implements ProviderRepository {
   }) async {
     requests.add(mode);
     lastAttachments = (photo: photo != null, voice: voice != null);
+    _declined.clear();
+    _lat = lat;
+    _lng = lng;
     final p = _all.where((x) => x.id == providerId).firstOrNull;
     _open = OwnerRequest(
       id: 'sample-${requests.length}',
@@ -412,6 +468,7 @@ class SampleProviderRepository implements ProviderRepository {
       providerPhone: p?.phone,
       providerIsMobile: p?.isMobile ?? true,
       calloutFeeKes: p?.calloutFeeKes,
+      assignedAt: DateTime.now(),
     );
   }
 
@@ -422,7 +479,7 @@ class SampleProviderRepository implements ProviderRepository {
         !r.accepted &&
         !r.passed &&
         acceptAfter != null &&
-        DateTime.now().difference(r.createdAt) >= acceptAfter!) {
+        DateTime.now().difference(r.waitingSince) >= acceptAfter!) {
       mechanicAccepts();
     }
     return _open;

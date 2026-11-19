@@ -18,6 +18,7 @@ import 'package:fundi/models/service_provider.dart';
 import 'package:fundi/models/trade.dart';
 import 'package:fundi/state/app_state.dart';
 import 'package:fundi/ui/request_status_screen.dart';
+import 'package:fundi/ui/shop_screen.dart';
 
 void main() {
   final kasarani = zones.first;
@@ -262,18 +263,52 @@ void main() {
       expect(await repo.myOpenRequest(), isNull);
     });
 
-    testWidgets('waiting: after 5 minutes, or if the mechanic passes, the '
-        'owner is pointed to someone else', (tester) async {
+    testWidgets('waiting: if the mechanic passes, the request goes on to the '
+        'next free mechanic by itself', (tester) async {
       await pumpApp(tester);
       await findMatch(tester);
       await tester.tap(find.byKey(const Key('request-mechanic')));
       await tester.pumpAndSettle();
       expect(find.text('This screen updates by itself.'), findsOneWidget);
+      final first = (await repo.myOpenRequest())!;
 
       repo.mechanicPasses();
       await tester.pump(RequestStatusScreen.checkEvery);
       await tester.pumpAndSettle();
+      final second = (await repo.myOpenRequest())!;
+      expect(second.providerId, isNot(first.providerId));
+      expect(second.providerId, isNotNull);
+      expect(second.rematchCount, 1);
+      // The owner did nothing; they are told who has it now.
+      expect(find.text('Waiting for confirmation'), findsOneWidget);
+      expect(
+        find.textContaining(
+          'so we sent your request to ${second.providerName}',
+        ),
+        findsOneWidget,
+      );
+      expect(find.byKey(const Key('status-call')), findsOneWidget);
+      await tester.tap(find.byKey(const Key('status-call')));
+      expect(dialed.last, second.providerPhone);
+    });
+
+    testWidgets('waiting: when nobody else is free, the owner is pointed to '
+        'mechanics nearby', (tester) async {
+      await pumpApp(tester);
+      await findMatch(tester);
+      await tester.tap(find.byKey(const Key('request-mechanic')));
+      await tester.pumpAndSettle();
+
+      // Pass until nobody is left or the request was sent on three times.
+      for (var i = 0; i < 5; i++) {
+        if ((await repo.myOpenRequest())!.providerId == null) break;
+        repo.mechanicPasses();
+      }
+      expect((await repo.myOpenRequest())!.rematchCount, lessThanOrEqualTo(3));
+      await tester.pump(RequestStatusScreen.checkEvery);
+      await tester.pumpAndSettle();
       expect(find.text('They can\'t take it'), findsOneWidget);
+      expect(find.textContaining('none is free right now'), findsOneWidget);
       await tester.tap(find.byKey(const Key('status-others')));
       await tester.pumpAndSettle();
       expect(find.text('Mechanics nearby'), findsOneWidget);
@@ -574,14 +609,18 @@ void main() {
       await tester.tap(find.byKey(const Key('call-shop-part2')));
       expect(dialed, [SampleDirectory.shopPhone]);
 
-      await tester.tap(find.byKey(const Key('order-part2')));
+      await tester.tap(find.byKey(const Key('add-part2')));
       await tester.pumpAndSettle();
-      await tester.tap(find.byKey(const Key('qty-plus')));
+      await tester.tap(find.byKey(const Key('add-part2')));
       await tester.pumpAndSettle();
+      expect(find.text('Added (2)'), findsOneWidget);
       // Only 2 in stock: no third.
-      await tester.tap(find.byKey(const Key('qty-plus')));
+      await tester.tap(find.byKey(const Key('add-part2')));
       await tester.pumpAndSettle();
-      expect(find.text('2'), findsWidgets);
+      expect(find.text('Only 2 in stock.'), findsOneWidget);
+      expect(find.textContaining('2 parts · KES 19,000'), findsOneWidget);
+      await tester.tap(find.byKey(const Key('basket-review')));
+      await tester.pumpAndSettle();
       expect(find.textContaining('Total KES 19,000'), findsOneWidget);
       await tester.enterText(
         find.byKey(const Key('order-note')),
@@ -599,6 +638,118 @@ void main() {
       expect(find.text('2 × Alternator'), findsOneWidget);
     });
 
+    testWidgets('a mechanic orders several parts from one shop in one order', (
+      tester,
+    ) async {
+      await pumpApp(tester);
+      final dir = account.directory;
+      // A second sample shop, to check the one-shop-per-order rule.
+      final other = dir.addShop(
+        name: 'Sample: Industrial Area Parts',
+        phone: '+254711000003',
+        area: 'Industrial Area',
+        ownerPhone: '+254711000003',
+      );
+      dir.parts.add(
+        PartListing(
+          id: 'part9',
+          shopId: other,
+          title: 'Fan belt',
+          priceKes: 800,
+          stockQty: 5,
+        ),
+      );
+      await openTradeArea(tester);
+      await signIn(tester, '0711 000 001');
+      await tester.ensureVisible(find.byKey(const Key('open-parts')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('open-parts')));
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.byKey(const Key('add-part1')));
+      await tester.pumpAndSettle();
+      await tester.dragUntilVisible(
+        find.byKey(const Key('add-part3')),
+        find.byKey(const Key('parts-results')),
+        const Offset(0, -150),
+      );
+      await tester.ensureVisible(find.byKey(const Key('add-part3')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('add-part3')));
+      await tester.pumpAndSettle();
+      expect(find.textContaining('2 parts · KES 7,600'), findsOneWidget);
+
+      // A part from another shop asks before starting a new order.
+      // The cheapest part is at the top of the list.
+      await tester.dragUntilVisible(
+        find.byKey(const Key('add-part9')),
+        find.byKey(const Key('parts-results')),
+        const Offset(0, 150),
+      );
+      await tester.ensureVisible(find.byKey(const Key('add-part9')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('add-part9')));
+      await tester.pumpAndSettle();
+      expect(find.text('One shop per order'), findsOneWidget);
+      await tester.tap(find.byKey(const Key('basket-keep')));
+      await tester.pumpAndSettle();
+      expect(find.textContaining('2 parts · KES 7,600'), findsOneWidget);
+
+      await tester.tap(find.byKey(const Key('basket-review')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('qty-plus-part1')));
+      await tester.pumpAndSettle();
+      expect(find.textContaining('Total KES 11,000'), findsOneWidget);
+      await tester.tap(find.byKey(const Key('order-send')));
+      await tester.pumpAndSettle();
+      expect(
+        find.textContaining('Order sent to Sample: Kirinyaga'),
+        findsOneWidget,
+      );
+      expect(find.byKey(const Key('basket-review')), findsNothing);
+
+      final placed = dir.orders.single.order;
+      expect(placed.items.map((i) => '${i.qty} × ${i.title}'), [
+        '2 × Front brake pads',
+        '1 × Engine oil 5W-30, 4 litres',
+      ]);
+      expect(placed.totalKes, 11000);
+    });
+
+    test('one order cannot mix shops', () async {
+      final dir = SampleDirectory.seeded();
+      final other = dir.addShop(
+        name: 'Other',
+        phone: '+254711000003',
+        area: 'CBD',
+        ownerPhone: '+254711000003',
+      );
+      dir.parts.add(
+        PartListing(
+          id: 'x',
+          shopId: other,
+          title: 'Belt',
+          priceKes: 1,
+          stockQty: 1,
+        ),
+      );
+      dir.claim(SampleDirectory.mechanicPhone);
+      final parts = SamplePartsRepository(
+        dir,
+        () => SampleDirectory.mechanicPhone,
+      );
+      final buyer = dir.listingOwnedBy(SampleDirectory.mechanicPhone)!;
+      expect(
+        () => parts.placeOrder(
+          buyerId: buyer.id,
+          lines: [(partId: 'part1', qty: 1), (partId: 'x', qty: 1)],
+        ),
+        throwsA(isA<AccountException>()),
+      );
+      // Nothing was held.
+      expect(dir.parts.firstWhere((p) => p.id == 'part1').stockQty, 6);
+    });
+
     testWidgets('a parts shop confirms an order and lists a new part', (
       tester,
     ) async {
@@ -613,19 +764,31 @@ void main() {
       final buyer = dir.listingOwnedBy(SampleDirectory.mechanicPhone)!;
       await mechanicParts.placeOrder(
         buyerId: buyer.id,
-        partId: 'part1',
-        qty: 1,
+        lines: [(partId: 'part1', qty: 1)],
       );
 
       await openTradeArea(tester);
       await signIn(tester, '0711 000 002');
       expect(find.text('Sample: Kirinyaga Road Spares'), findsOneWidget);
       expect(find.text(buyer.name), findsOneWidget);
+      expect(find.text('Orders (1 new)'), findsOneWidget);
       final order = dir.orders.single.order;
       await tester.tap(find.byKey(Key('order-next-${order.id}')));
       await tester.pumpAndSettle();
       expect(find.text('Confirmed by the shop'), findsOneWidget);
       expect(dir.orders.single.order.status, OrderStatus.confirmed);
+      expect(find.text('Orders'), findsOneWidget);
+
+      // A new order shows up by itself while the shop has the screen open.
+      await mechanicParts.placeOrder(
+        buyerId: buyer.id,
+        lines: [(partId: 'part3', qty: 2)],
+        note: 'Collect at 5',
+      );
+      await tester.pump(ShopScreen.checkEvery);
+      await tester.pumpAndSettle();
+      expect(find.text('Orders (1 new)'), findsOneWidget);
+      expect(find.text('2 × Engine oil 5W-30, 4 litres'), findsOneWidget);
 
       await tester.tap(find.byKey(const Key('shop-tab-parts')));
       await tester.pumpAndSettle();
@@ -917,7 +1080,8 @@ void main() {
       final parts = partsFor('+254733000222');
       expect(() => parts.search(), throwsA(isA<AccountException>()));
       expect(
-        () => parts.placeOrder(buyerId: 'p1', partId: 'part1', qty: 1),
+        () =>
+            parts.placeOrder(buyerId: 'p1', lines: [(partId: 'part1', qty: 1)]),
         throwsA(isA<AccountException>()),
       );
     });
@@ -929,8 +1093,7 @@ void main() {
         final buyer = dir.listingOwnedBy(SampleDirectory.mechanicPhone)!;
         final id = await buyerParts.placeOrder(
           buyerId: buyer.id,
-          partId: 'part1',
-          qty: 2,
+          lines: [(partId: 'part1', qty: 2)],
         );
         expect(dir.parts.firstWhere((p) => p.id == 'part1').stockQty, 4);
         expect(

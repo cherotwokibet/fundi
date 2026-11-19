@@ -112,6 +112,8 @@ Never put the `service_role` key in the app.
   their helpers) search parts by name, number and car make, nearest shop
   first, call the shop or order. Shops (owners and workers) list parts with
   price, stock and fitment, and move orders on: confirmed → ready → collected.
+  The shop's Orders tab checks for new orders every 30 seconds and shows how
+  many are waiting.
   Stock is held when an order is placed and given back if it is cancelled.
   Payment is between buyer and shop for now. Car owners and guests never see
   any of it; the database refuses them.
@@ -128,6 +130,11 @@ Never put the `service_role` key in the app.
   **I can't take it**. Passing frees the request and the mechanic loses access
   to its files; it can never be sent back to them. Owners can now only cancel
   a request, not edit it.
+- Re-matching: when a mechanic passes, the database sends the request on to
+  the next best free mechanic (approved, identity checked, not busy or
+  offline, within reach; available first, then nearest), at most three times.
+  The owner's waiting screen says who has it now and restarts its timer. Only
+  when nobody fits does the owner see mechanics nearby.
 
 ## Test the database rules
 
@@ -142,8 +149,7 @@ supabase/tests/run.sh
 ## Not built yet
 
 - Phone sign-in for owners, quotes, M-Pesa payments, reviews (Phase 2)
-- Paying for parts in the app, delivery, orders with several parts from one shop
-  (the database already accepts several; the app sends one)
+- Paying for parts in the app, delivery, push or SMS alerts for new orders
 
 ## Layout
 

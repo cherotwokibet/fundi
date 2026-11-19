@@ -128,6 +128,8 @@ class OwnerRequest {
     this.providerPhone,
     this.providerIsMobile = true,
     this.calloutFeeKes,
+    this.assignedAt,
+    this.rematchCount = 0,
   });
   final String id;
   final RequestMode mode;
@@ -145,9 +147,22 @@ class OwnerRequest {
   final bool providerIsMobile;
   final int? calloutFeeKes;
 
+  /// When the current mechanic got the request.
+  final DateTime? assignedAt;
+
+  /// How many times the request was sent on after a mechanic passed.
+  final int rematchCount;
+
+  /// The owner's wait starts again each time the request is sent on.
+  DateTime get waitingSince => assignedAt ?? createdAt;
+
+  /// The request was sent on to another mechanic after a pass.
+  bool get wasResent => rematchCount > 0;
+
   bool get accepted => status == OwnerRequestStatus.accepted;
 
-  /// The mechanic passed; nobody has the request now.
+  /// Nobody has the request: the mechanic passed and no other free
+  /// mechanic fitted, or it was already sent on three times.
   bool get passed => providerId == null;
 
   /// Maps one row of the `my_open_request` database function.
@@ -171,6 +186,10 @@ class OwnerRequest {
     providerPhone: r['provider_phone'] as String?,
     providerIsMobile: r['provider_type'] != 'garage',
     calloutFeeKes: (r['callout_fee_kes'] as num?)?.toInt(),
+    assignedAt: r['assigned_at'] == null
+        ? null
+        : DateTime.parse(r['assigned_at'] as String).toLocal(),
+    rematchCount: (r['rematch_count'] as num?)?.toInt() ?? 0,
   );
 }
 

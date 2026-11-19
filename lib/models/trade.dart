@@ -275,6 +275,9 @@ enum OrderStatus {
       values.firstWhere((v) => v.name == n, orElse: () => placed);
 }
 
+/// One line of an order being placed: which part and how many.
+typedef OrderLine = ({String partId, int qty});
+
 class OrderItem {
   const OrderItem({
     required this.title,
