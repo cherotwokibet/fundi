@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_web_plugins/url_strategy.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import 'data/account_repository.dart';
@@ -8,9 +9,11 @@ import 'data/dev_codes_repository.dart';
 import 'data/inbox_repository.dart';
 import 'data/parts_repository.dart';
 import 'data/provider_repository.dart';
+import 'models/portal.dart';
 import 'state/app_state.dart';
 import 'ui/dev_codes_screen.dart';
 import 'ui/home_screen.dart';
+import 'ui/provider_area.dart';
 import 'ui/theme.dart';
 
 // Supply these at build time to use the real backend:
@@ -21,6 +24,8 @@ const supabaseAnonKey = String.fromEnvironment('SUPABASE_ANON_KEY');
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  // Real paths (/admin, /garage, /parts) instead of /#/.
+  usePathUrlStrategy();
   final live = supabaseUrl.isNotEmpty && supabaseAnonKey.isNotEmpty;
   if (live) {
     await Supabase.initialize(
@@ -54,26 +59,34 @@ Future<void> main() async {
         ],
       ],
       // Development only: <site>/?testcodes=<key> opens the test codes page.
-      child: FundiApp(codesKey: Uri.base.queryParameters['testcodes']),
+      child: FundiApp(
+        codesKey: Uri.base.queryParameters['testcodes'],
+        portal: Portal.fromPath(Uri.base.path),
+      ),
     ),
   );
 }
 
 class FundiApp extends StatelessWidget {
-  const FundiApp({super.key, this.codesKey});
+  const FundiApp({super.key, this.codesKey, this.portal = Portal.owner});
 
   /// When set, the app opens on the test sign-in codes page.
   final String? codesKey;
 
+  /// Which link the app was opened on: owners, admin, garages or parts shops.
+  final Portal portal;
+
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'Fundi',
+      title: portal.title,
       debugShowCheckedModeBanner: false,
       theme: buildTheme(),
-      home: (codesKey == null || codesKey!.isEmpty)
+      home: (codesKey != null && codesKey!.isNotEmpty)
+          ? DevCodesScreen(codesKey!)
+          : portal == Portal.owner
           ? const HomeScreen()
-          : DevCodesScreen(codesKey!),
+          : ProviderArea(portal: portal),
     );
   }
 }

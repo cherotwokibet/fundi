@@ -36,6 +36,18 @@ Every screen is tested against one question: does this make the owner do more?
 
 Gates: 90 verified providers live before Phase 2; 300 paid jobs in the pilot before Phase 3.
 
+## Separate portal links (20 Nov 2026, evening)
+
+Each kind of user has its own link on the same site (one Flutter build):
+- `/` car owners. The home screen no longer has a trade link.
+- `/admin` the Fundi team: admin console (mechanics, shops, complaints, parts view).
+- `/garage` mechanics and garages: listing, availability, inbox, quotes, ordering parts.
+- `/parts` parts shops: listings and incoming orders (the seller side of the marketplace).
+A portal only opens its own screens. A number signed in on the wrong link gets
+"This number is not for the …" and a button to the portal(s) it belongs to.
+`netlify.toml` rewrites every path to `index.html`; the app uses path URLs
+(`usePathUrlStrategy`). 60 Flutter tests. Not yet deployed to fundi-test.netlify.app.
+
 ## State of the build (20 Nov 2026, later)
 
 Every migration up to and including `20261122000000_complaints_refunds.sql` is applied

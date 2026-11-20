@@ -95,9 +95,14 @@ Never put the `service_role` key in the app.
 - Database: tables, `nearby_providers` PostGIS function, row-level security
 - No self-onboarding. An admin adds every garage, mobile mechanic and parts
   shop in the admin console, with the phone numbers of the people who work
-  there. A person signs in ("For mechanics, garages and parts shops" on the
-  home screen) with that number and is linked to what they were added to. A
-  number nobody added sees "This number is not registered" and nothing else.
+  there. A person signs in with that number on their own portal and is linked
+  to what they were added to. A number nobody added sees "This number is not
+  registered" and nothing else.
+- Each kind of user has its own link: `/` car owners, `/admin` the Fundi
+  team, `/garage` mechanics and garages (and ordering parts), `/parts` parts
+  shops. The owner app has no link to the others. Signing in on the wrong
+  link shows a button to the right one. `netlify.toml` sends every path to
+  the app, which reads it (`lib/models/portal.dart`).
 - Mechanic side: the Available / Busy / Offline switch. "Available" expires
   after 4 hours, set by the server clock.
 

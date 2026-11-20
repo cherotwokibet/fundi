@@ -5,7 +5,6 @@ import '../state/app_state.dart';
 import 'browse_screen.dart';
 import 'find_screen.dart';
 import 'location_bar.dart';
-import 'provider_area.dart';
 import 'request_status_screen.dart';
 import 'safety_sheet.dart';
 import 'theme.dart';
@@ -66,11 +65,6 @@ class HomeScreen extends ConsumerWidget {
       ],
     );
     final safety = _SafetyLink(onTap: () => showSafetySheet(context));
-    final mechanic = TextButton(
-      key: const Key('home-provider'),
-      onPressed: () => go(const ProviderArea()),
-      child: const Text('For mechanics, garages and parts shops'),
-    );
 
     if (isWide(context)) {
       return Scaffold(
@@ -124,7 +118,6 @@ class HomeScreen extends ConsumerWidget {
                       ),
                       const SizedBox(height: 16),
                       trust,
-                      Center(child: mechanic),
                     ],
                   ),
                 ),
@@ -164,7 +157,6 @@ class HomeScreen extends ConsumerWidget {
                           trust,
                           const SizedBox(height: 12),
                           safety,
-                          mechanic,
                         ],
                       ),
                     ),

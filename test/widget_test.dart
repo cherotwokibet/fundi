@@ -14,6 +14,7 @@ import 'package:fundi/data/voice_player.dart';
 import 'package:fundi/data/voice_recorder.dart';
 import 'package:fundi/data/zones.dart';
 import 'package:fundi/main.dart';
+import 'package:fundi/models/portal.dart';
 import 'package:fundi/models/quote.dart';
 import 'package:fundi/models/service_provider.dart';
 import 'package:fundi/models/trade.dart';
@@ -95,7 +96,10 @@ void main() {
     late SampleAccountRepository account;
     late List<String> dialed;
 
-    Future<void> pumpApp(WidgetTester tester) async {
+    Future<void> pumpApp(
+      WidgetTester tester, {
+      Portal portal = Portal.owner,
+    }) async {
       // The sample mechanic only answers when a test tells it to.
       repo = SampleProviderRepository(acceptAfter: null);
       account = SampleAccountRepository();
@@ -119,7 +123,7 @@ void main() {
               return true;
             }),
           ],
-          child: const FundiApp(),
+          child: FundiApp(portal: portal),
         ),
       );
       await tester.pumpAndSettle();
@@ -604,12 +608,7 @@ void main() {
       final browseBox = tester.getRect(find.byKey(const Key('home-browse')));
       // Side by side, not stacked, and both on screen.
       expect(browseBox.left, greaterThan(findBox.right));
-      for (final key in [
-        'home-find',
-        'home-browse',
-        'home-safety',
-        'home-provider',
-      ]) {
+      for (final key in ['home-find', 'home-browse', 'home-safety']) {
         final box = tester.getRect(find.byKey(Key(key)));
         expect(box.bottom, lessThanOrEqualTo(720), reason: key);
       }
@@ -656,7 +655,6 @@ void main() {
         'home-find',
         'home-browse',
         'home-safety',
-        'home-provider',
         'location-bar',
       ]) {
         final box = tester.getSize(find.byKey(Key(key)));
@@ -681,8 +679,7 @@ void main() {
     testWidgets('trade sign-in: an unregistered number gets no way to join', (
       tester,
     ) async {
-      await pumpApp(tester);
-      await openTradeArea(tester);
+      await pumpApp(tester, portal: Portal.garage);
       expect(
         find.textContaining('Our team adds every mechanic'),
         findsOneWidget,
@@ -720,8 +717,7 @@ void main() {
 
     testWidgets('admin adds a mechanic, approves them, then the mechanic '
         'signs in and goes available', (tester) async {
-      await pumpApp(tester);
-      await openTradeArea(tester);
+      await pumpApp(tester, portal: Portal.admin);
       await signIn(tester, '0700 000 000');
       expect(find.text('Admin'), findsOneWidget);
 
@@ -794,6 +790,10 @@ void main() {
       await tester.tap(find.text('Sign out'));
       await tester.pumpAndSettle();
       await signIn(tester, '0712 345 678');
+      // Signed in on the admin link: pointed to the garage portal.
+      expect(find.text('Admin'), findsNothing);
+      await tester.tap(find.byKey(const Key('go-portal-garage')));
+      await tester.pumpAndSettle();
       expect(find.text('Are you taking jobs now?'), findsOneWidget);
       expect(find.text('Owners see you as offline.'), findsOneWidget);
       expect(find.byKey(const Key('open-parts')), findsOneWidget);
@@ -805,8 +805,7 @@ void main() {
     testWidgets('a mechanic finds a part, orders it and sees the order', (
       tester,
     ) async {
-      await pumpApp(tester);
-      await openTradeArea(tester);
+      await pumpApp(tester, portal: Portal.garage);
       await signIn(tester, '0711 000 001');
       await tester.ensureVisible(find.byKey(const Key('open-parts')));
       await tester.pumpAndSettle();
@@ -859,7 +858,7 @@ void main() {
     testWidgets('a mechanic orders several parts from one shop in one order', (
       tester,
     ) async {
-      await pumpApp(tester);
+      await pumpApp(tester, portal: Portal.garage);
       final dir = account.directory;
       // A second sample shop, to check the one-shop-per-order rule.
       final other = dir.addShop(
@@ -877,7 +876,6 @@ void main() {
           stockQty: 5,
         ),
       );
-      await openTradeArea(tester);
       await signIn(tester, '0711 000 001');
       await tester.ensureVisible(find.byKey(const Key('open-parts')));
       await tester.pumpAndSettle();
@@ -971,7 +969,7 @@ void main() {
     testWidgets('a parts shop confirms an order and lists a new part', (
       tester,
     ) async {
-      await pumpApp(tester);
+      await pumpApp(tester, portal: Portal.parts);
       // The sample mechanic orders first, through the same rules.
       final dir = account.directory;
       final mechanicParts = SamplePartsRepository(
@@ -985,7 +983,6 @@ void main() {
         lines: [(partId: 'part1', qty: 1)],
       );
 
-      await openTradeArea(tester);
       await signIn(tester, '0711 000 002');
       expect(find.text('Sample: Kirinyaga Road Spares'), findsOneWidget);
       expect(find.text(buyer.name), findsOneWidget);
@@ -1040,8 +1037,7 @@ void main() {
     testWidgets('admin adds a shop worker, who signs in to the shop', (
       tester,
     ) async {
-      await pumpApp(tester);
-      await openTradeArea(tester);
+      await pumpApp(tester, portal: Portal.admin);
       await signIn(tester, '0700 000 000');
       await tester.tap(find.byKey(const Key('admin-tab-shops')));
       await tester.pumpAndSettle();
@@ -1062,9 +1058,89 @@ void main() {
       await tester.pumpAndSettle();
 
       await signIn(tester, '0733 000 111');
+      await tester.tap(find.byKey(const Key('go-portal-parts')));
+      await tester.pumpAndSettle();
       expect(find.text(shop.name), findsOneWidget);
       expect(find.text('Our parts'), findsOneWidget);
     });
+  });
+
+  test('each portal has its own link', () {
+    expect(Portal.fromPath('/'), Portal.owner);
+    expect(Portal.fromPath('/admin'), Portal.admin);
+    expect(Portal.fromPath('/admin/'), Portal.admin);
+    expect(Portal.fromPath('/garage'), Portal.garage);
+    expect(Portal.fromPath('/Mechanic'), Portal.garage);
+    expect(Portal.fromPath('/parts'), Portal.parts);
+    expect(Portal.fromPath('/shop'), Portal.parts);
+    expect(Portal.fromPath('/anything-else'), Portal.owner);
+  });
+
+  testWidgets('owner home has no way into the trade portals', (tester) async {
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [gpsLookupProvider.overrideWithValue(() async => null)],
+        child: const FundiApp(),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(find.textContaining('parts shops'), findsNothing);
+    expect(find.textContaining('Admin'), findsNothing);
+  });
+
+  testWidgets('a mechanic on the admin or parts link gets no admin or shop '
+      'screens, only a button to their own portal', (tester) async {
+    tester.view.physicalSize = const Size(1080, 2340);
+    tester.view.devicePixelRatio = 2.75;
+    addTearDown(tester.view.reset);
+    for (final portal in [Portal.admin, Portal.parts]) {
+      final account = SampleAccountRepository();
+      await account.verifyCode(
+        SampleAccountRepository.sampleMechanicPhone,
+        SampleAccountRepository.sampleCode,
+      );
+      await tester.pumpWidget(
+        ProviderScope(
+          key: UniqueKey(),
+          overrides: [
+            accountProvider.overrideWithValue(account),
+            gpsLookupProvider.overrideWithValue(() async => null),
+          ],
+          child: FundiApp(portal: portal),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(find.textContaining('This number is not for the'), findsOneWidget);
+      expect(find.text('Admin'), findsNothing);
+      expect(find.text('Our parts'), findsNothing);
+      expect(find.byKey(const Key('go-portal-admin')), findsNothing);
+      expect(find.byKey(const Key('go-portal-garage')), findsOneWidget);
+    }
+    await tester.tap(find.byKey(const Key('go-portal-garage')));
+    await tester.pumpAndSettle();
+    expect(find.textContaining('This number is not for the'), findsNothing);
+  });
+
+  testWidgets('each portal sign-in says what it is for', (tester) async {
+    for (final (portal, title) in [
+      (Portal.admin, 'Fundi admin'),
+      (Portal.garage, 'Mechanics and garages'),
+      (Portal.parts, 'Parts shops'),
+    ]) {
+      await tester.pumpWidget(
+        ProviderScope(
+          key: UniqueKey(),
+          overrides: [
+            accountProvider.overrideWithValue(SampleAccountRepository()),
+            gpsLookupProvider.overrideWithValue(() async => null),
+          ],
+          child: FundiApp(portal: portal),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(find.text(title), findsOneWidget);
+      expect(find.byKey(const Key('phone')), findsOneWidget);
+    }
   });
 
   test('admin: cannot approve before identity is checked', () async {
@@ -1102,13 +1178,9 @@ void main() {
             accountProvider.overrideWithValue(account),
             gpsLookupProvider.overrideWithValue(() async => null),
           ],
-          child: const FundiApp(),
+          child: const FundiApp(portal: Portal.admin),
         ),
       );
-      await tester.pumpAndSettle();
-      await tester.ensureVisible(find.byKey(const Key('home-provider')));
-      await tester.pumpAndSettle();
-      await tester.tap(find.byKey(const Key('home-provider')));
       await tester.pumpAndSettle();
       expect(find.text('Admin'), findsOneWidget);
       expect(find.text('Mwangi Mobile Mechanic'), findsOneWidget);
@@ -1172,13 +1244,9 @@ void main() {
           adminProvider.overrideWithValue(admin),
           gpsLookupProvider.overrideWithValue(() async => null),
         ],
-        child: const FundiApp(),
+        child: const FundiApp(portal: Portal.admin),
       ),
     );
-    await tester.pumpAndSettle();
-    await tester.ensureVisible(find.byKey(const Key('home-provider')));
-    await tester.pumpAndSettle();
-    await tester.tap(find.byKey(const Key('home-provider')));
     await tester.pumpAndSettle();
     await tester.tap(find.byKey(const Key('admin-tab-complaints')));
     await tester.pumpAndSettle();
@@ -1264,13 +1332,9 @@ void main() {
             voicePlayerProvider.overrideWithValue(player),
             gpsLookupProvider.overrideWithValue(() async => null),
           ],
-          child: const FundiApp(),
+          child: const FundiApp(portal: Portal.garage),
         ),
       );
-      await tester.pumpAndSettle();
-      await tester.ensureVisible(find.byKey(const Key('home-provider')));
-      await tester.pumpAndSettle();
-      await tester.tap(find.byKey(const Key('home-provider')));
       await tester.pumpAndSettle();
     }
 
@@ -1673,13 +1737,6 @@ class _FakeCodes extends DevCodesRepository {
       createdAt: DateTime.now(),
     ),
   ];
-}
-
-Future<void> openTradeArea(WidgetTester tester) async {
-  await tester.ensureVisible(find.byKey(const Key('home-provider')));
-  await tester.pumpAndSettle();
-  await tester.tap(find.byKey(const Key('home-provider')));
-  await tester.pumpAndSettle();
 }
 
 /// Signs in on the trade sign-in screen with the sample code.

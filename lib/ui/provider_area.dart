@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../data/account_repository.dart';
+import '../models/portal.dart';
 import '../models/service_provider.dart';
 import '../models/trade.dart';
 import '../state/app_state.dart';
@@ -13,18 +14,20 @@ import 'shop_screen.dart';
 import 'theme.dart';
 import 'widgets.dart';
 
-/// Entry for mechanics, garages and parts shops. Nobody joins here: our
-/// team adds every business and the numbers of the people who work there.
-/// Signing in with one of those numbers opens what the person was added to.
+/// The admin, garage and parts shop portals, each on its own link. Nobody
+/// joins here: our team adds every business and the numbers of the people
+/// who work there. Signing in opens only what this portal is for; a number
+/// that belongs to another portal is pointed there.
 class ProviderArea extends ConsumerWidget {
-  const ProviderArea({super.key});
+  const ProviderArea({super.key, this.portal = Portal.garage});
+  final Portal portal;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final account = ref.watch(accountProvider);
     // Rebuilt when sign-in state or the listing changes.
     ref.watch(accountVersionProvider);
-    if (!account.isSignedIn) return const _SignInScreen();
+    if (!account.isSignedIn) return _SignInScreen(portal);
     return ref
         .watch(accessProvider)
         .when(
@@ -35,12 +38,91 @@ class ProviderArea extends ConsumerWidget {
             onRetry: () => ref.invalidate(accessProvider),
           ),
           data: (access) {
-            if (access.isAdmin) return const AdminScreen();
             if (!access.isRegistered) return const _NotRegisteredScreen();
-            if (access.memberships.length > 1) return _ChooserScreen(access);
-            return _destination(access, access.memberships.single);
+            if (portal == Portal.admin) {
+              return access.isAdmin
+                  ? const AdminScreen()
+                  : _WrongPortalScreen(portal, access);
+            }
+            final mine = [
+              for (final m in access.memberships)
+                if (portalFor(m) == portal) m,
+            ];
+            if (mine.isEmpty) return _WrongPortalScreen(portal, access);
+            if (mine.length > 1) return _ChooserScreen(access, mine);
+            return _destination(access, mine.single);
           },
         );
+  }
+}
+
+/// The portal a membership is used from.
+Portal portalFor(Membership m) =>
+    m.kind == OrgKind.shop ? Portal.parts : Portal.garage;
+
+/// Every portal this person can use.
+List<Portal> portalsOf(TradeAccess access) => [
+  if (access.isAdmin) Portal.admin,
+  for (final p in [Portal.garage, Portal.parts])
+    if (access.memberships.any((m) => portalFor(m) == p)) p,
+];
+
+String _portalName(Portal p) => switch (p) {
+  Portal.admin => 'admin portal',
+  Portal.garage => 'portal for mechanics and garages',
+  Portal.parts => 'portal for parts shops',
+  Portal.owner => 'car owner app',
+};
+
+/// Opens another portal: a new address on the web, a new screen in the app.
+void openPortal(BuildContext context, Portal p) {
+  SystemNavigator.routeInformationUpdated(uri: Uri.parse(p.path));
+  Navigator.of(context).pushReplacement(
+    MaterialPageRoute<void>(builder: (_) => ProviderArea(portal: p)),
+  );
+}
+
+/// Signed in on the wrong link: say which portal is theirs.
+class _WrongPortalScreen extends ConsumerWidget {
+  const _WrongPortalScreen(this.portal, this.access);
+  final Portal portal;
+  final TradeAccess access;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final theirs = portalsOf(access);
+    return Scaffold(
+      appBar: AppBar(
+        actions: [
+          TextButton(
+            onPressed: () => _signOut(ref),
+            child: const Text('Sign out'),
+          ),
+        ],
+      ),
+      body: ContentWidth(
+        child: ListView(
+          padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
+          children: [
+            _StatusNote(
+              icon: Icons.alt_route,
+              title: 'This number is not for the ${_portalName(portal)}',
+              body: 'Use the link for your work below. Save it on your phone.',
+            ),
+            const SizedBox(height: 20),
+            for (final p in theirs)
+              Padding(
+                padding: const EdgeInsets.only(bottom: 10),
+                child: FilledButton(
+                  key: Key('go-portal-${p.name}'),
+                  onPressed: () => openPortal(context, p),
+                  child: Text('Open the ${_portalName(p)}'),
+                ),
+              ),
+          ],
+        ),
+      ),
+    );
   }
 }
 
@@ -169,8 +251,9 @@ class _PausedScreen extends ConsumerWidget {
 
 /// For someone added to more than one business.
 class _ChooserScreen extends ConsumerWidget {
-  const _ChooserScreen(this.access);
+  const _ChooserScreen(this.access, this.memberships);
   final TradeAccess access;
+  final List<Membership> memberships;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -188,7 +271,7 @@ class _ChooserScreen extends ConsumerWidget {
         child: ListView(
           padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
           children: [
-            for (final m in access.memberships)
+            for (final m in memberships)
               Card(
                 margin: const EdgeInsets.only(bottom: 10),
                 child: ListTile(
@@ -225,11 +308,24 @@ String _friendly(Object e) => e is AccountException
     ? e.message
     : 'Something went wrong. Check your connection and try again.';
 
+String _signInTitle(Portal p) => switch (p) {
+  Portal.admin => 'Fundi admin',
+  Portal.parts => 'Parts shops',
+  _ => 'Mechanics and garages',
+};
+
+String _sampleNumber(Portal p) => switch (p) {
+  Portal.admin => 'Sample admin: 0700 000 000.',
+  Portal.parts => 'Sample parts shop: 0711 000 002.',
+  _ => 'Sample mechanic: 0711 000 001.',
+};
+
 // ---------------------------------------------------------------------------
 // Sign in with a phone number and a code
 // ---------------------------------------------------------------------------
 class _SignInScreen extends ConsumerStatefulWidget {
-  const _SignInScreen();
+  const _SignInScreen(this.portal);
+  final Portal portal;
 
   @override
   ConsumerState<_SignInScreen> createState() => _SignInState();
@@ -283,7 +379,7 @@ class _SignInState extends ConsumerState<_SignInScreen> {
   Widget build(BuildContext context) {
     final sample = ref.watch(sampleModeProvider);
     return Scaffold(
-      appBar: AppBar(title: const Text('Mechanics, garages and parts shops')),
+      appBar: AppBar(title: Text(_signInTitle(widget.portal))),
       body: ContentWidth(
         child: ListView(
           padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
@@ -293,9 +389,11 @@ class _SignInState extends ConsumerState<_SignInScreen> {
               style: TextStyle(fontSize: 22, fontWeight: FontWeight.w700),
             ),
             const SizedBox(height: 6),
-            const Text(
-              'Our team adds every mechanic, garage and parts shop after checking them. '
-              'Sign in with the number you gave our team.',
+            Text(
+              widget.portal == Portal.admin
+                  ? 'For the Fundi team only. Sign in with your team number.'
+                  : 'Our team adds every mechanic, garage and parts shop after checking them. '
+                        'Sign in with the number you gave our team.',
             ),
             const SizedBox(height: 20),
             if (sentTo == null) ...[
@@ -319,12 +417,12 @@ class _SignInState extends ConsumerState<_SignInScreen> {
             ] else ...[
               Text('Enter the 6-digit code sent to $sentTo'),
               if (sample)
-                const Padding(
-                  padding: EdgeInsets.only(top: 6),
+                Padding(
+                  padding: const EdgeInsets.only(top: 6),
                   child: Text(
-                    'Sample mode: no SMS is sent. Use 123456. Sample numbers: '
-                    '0700 000 000 admin, 0711 000 001 mechanic, 0711 000 002 parts shop.',
-                    style: TextStyle(fontSize: 13),
+                    'Sample mode: no SMS is sent. Use 123456. '
+                    '${_sampleNumber(widget.portal)}',
+                    style: const TextStyle(fontSize: 13),
                   ),
                 ),
               const SizedBox(height: 12),

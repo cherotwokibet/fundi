@@ -9,3 +9,10 @@
   [headers.values]
     X-Robots-Tag = "noindex, nofollow"
     Referrer-Policy = "no-referrer"
+
+# Each portal has its own address (/admin, /garage, /parts); the app reads
+# the path, so every address serves the same page.
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200
