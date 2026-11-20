@@ -82,11 +82,19 @@ class FundiApp extends StatelessWidget {
       title: portal.title,
       debugShowCheckedModeBanner: false,
       theme: buildTheme(),
-      home: (codesKey != null && codesKey!.isNotEmpty)
-          ? DevCodesScreen(codesKey!)
-          : portal == Portal.owner
-          ? const HomeScreen()
-          : ProviderArea(portal: portal),
+      // The first screen is a named route so the address bar keeps the
+      // portal's path (/admin, /garage, /parts) and a refresh stays there.
+      onGenerateInitialRoutes: (_) => [_firstRoute()],
+      onGenerateRoute: (_) => _firstRoute(),
     );
   }
+
+  Route<void> _firstRoute() => MaterialPageRoute<void>(
+    settings: RouteSettings(name: portal.path),
+    builder: (_) => (codesKey != null && codesKey!.isNotEmpty)
+        ? DevCodesScreen(codesKey!)
+        : portal == Portal.owner
+        ? const HomeScreen()
+        : ProviderArea(portal: portal),
+  );
 }

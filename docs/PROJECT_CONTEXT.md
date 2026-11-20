@@ -46,7 +46,7 @@ Each kind of user has its own link on the same site (one Flutter build):
 A portal only opens its own screens. A number signed in on the wrong link gets
 "This number is not for the …" and a button to the portal(s) it belongs to.
 `netlify.toml` rewrites every path to `index.html`; the app uses path URLs
-(`usePathUrlStrategy`). 60 Flutter tests. Not yet deployed to fundi-test.netlify.app.
+(`usePathUrlStrategy`); the first screen is a named route so the path stays in the address bar. 61 Flutter tests. Not yet deployed to fundi-test.netlify.app.
 
 ## State of the build (20 Nov 2026, later)
 

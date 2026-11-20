@@ -76,9 +76,11 @@ String _portalName(Portal p) => switch (p) {
 
 /// Opens another portal: a new address on the web, a new screen in the app.
 void openPortal(BuildContext context, Portal p) {
-  SystemNavigator.routeInformationUpdated(uri: Uri.parse(p.path));
   Navigator.of(context).pushReplacement(
-    MaterialPageRoute<void>(builder: (_) => ProviderArea(portal: p)),
+    MaterialPageRoute<void>(
+      settings: RouteSettings(name: p.path),
+      builder: (_) => ProviderArea(portal: p),
+    ),
   );
 }
 

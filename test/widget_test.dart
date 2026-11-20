@@ -1121,6 +1121,26 @@ void main() {
     expect(find.textContaining('This number is not for the'), findsNothing);
   });
 
+  testWidgets('a portal keeps its path, so a refresh stays on it', (
+    tester,
+  ) async {
+    for (final portal in Portal.values) {
+      await tester.pumpWidget(
+        ProviderScope(
+          key: UniqueKey(),
+          overrides: [
+            accountProvider.overrideWithValue(SampleAccountRepository()),
+            gpsLookupProvider.overrideWithValue(() async => null),
+          ],
+          child: FundiApp(portal: portal),
+        ),
+      );
+      await tester.pumpAndSettle();
+      final ctx = tester.element(find.byType(Scaffold).first);
+      expect(ModalRoute.of(ctx)!.settings.name, portal.path);
+    }
+  });
+
   testWidgets('each portal sign-in says what it is for', (tester) async {
     for (final (portal, title) in [
       (Portal.admin, 'Fundi admin'),
