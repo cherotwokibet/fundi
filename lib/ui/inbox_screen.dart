@@ -3,7 +3,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../data/account_repository.dart';
 import '../data/inbox_repository.dart';
+import '../models/complaint.dart';
 import '../models/quote.dart';
+import '../models/trade.dart';
 import '../models/service_provider.dart';
 import '../state/app_state.dart';
 import 'quote_screen.dart';
@@ -330,6 +332,9 @@ class _RequestCardState extends ConsumerState<_RequestCard> {
                   style: TextStyle(fontSize: 13),
                 ),
               ),
+            if (r.status == RequestStatus.accepted ||
+                r.status == RequestStatus.done)
+              _ComplaintSection(r.id),
             if (r.status == RequestStatus.accepted) ...[
               _QuoteSection(r.id),
               TextButton(
@@ -417,6 +422,125 @@ class _QuoteSection extends ConsumerWidget {
           label: Text(q == null ? 'Send a quote' : 'Send a new quote'),
         ),
       ],
+    );
+  }
+}
+
+/// The owner's complaint about this job, if any, and the mechanic's one reply.
+class _ComplaintSection extends ConsumerStatefulWidget {
+  const _ComplaintSection(this.requestId);
+  final String requestId;
+
+  @override
+  ConsumerState<_ComplaintSection> createState() => _ComplaintSectionState();
+}
+
+class _ComplaintSectionState extends ConsumerState<_ComplaintSection> {
+  final reply = TextEditingController();
+  bool busy = false;
+
+  @override
+  void dispose() {
+    reply.dispose();
+    super.dispose();
+  }
+
+  Future<void> _send(Complaint c) async {
+    final messenger = ScaffoldMessenger.of(context);
+    setState(() => busy = true);
+    try {
+      await ref
+          .read(inboxRepositoryProvider)
+          .replyToComplaint(c.id, reply.text.trim());
+      ref.invalidate(inboxComplaintProvider(widget.requestId));
+      messenger.showSnackBar(
+        const SnackBar(content: Text('Reply sent. Fundi will decide.')),
+      );
+    } catch (e) {
+      messenger.showSnackBar(
+        SnackBar(
+          content: Text(
+            e is AccountException
+                ? e.message
+                : 'Something went wrong. Check your connection and try again.',
+          ),
+        ),
+      );
+    } finally {
+      if (mounted) setState(() => busy = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final c = ref.watch(inboxComplaintProvider(widget.requestId)).value;
+    if (c == null) return const SizedBox.shrink();
+    final outcome = switch (c.status) {
+      ComplaintStatus.open => 'Fundi will look at it and tell you the outcome.',
+      ComplaintStatus.upheld =>
+        c.refundKes > 0
+            ? 'Upheld. The owner gets ${kes(c.refundKes)} back. ${c.adminNote ?? ''}'
+            : 'Upheld. ${c.adminNote ?? ''}',
+      ComplaintStatus.rejected => 'Not upheld. ${c.adminNote ?? ''}',
+    };
+    return Container(
+      key: Key('complaint-${widget.requestId}'),
+      margin: const EdgeInsets.only(bottom: 8),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: const Color(0xFFFFF3D6),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          const Text(
+            'The owner reported a problem',
+            style: TextStyle(fontWeight: FontWeight.w700),
+          ),
+          const SizedBox(height: 4),
+          Text('"${c.message}"'),
+          if (c.wantsRefund)
+            const Text(
+              'They asked for their money back.',
+              style: TextStyle(fontSize: 13),
+            ),
+          const SizedBox(height: 6),
+          if (c.providerReply != null)
+            Text(
+              'You answered: "${c.providerReply}"',
+              style: const TextStyle(fontSize: 13),
+            )
+          else if (c.open) ...[
+            TextField(
+              key: Key('complaint-reply-${widget.requestId}'),
+              controller: reply,
+              maxLength: 500,
+              maxLines: 3,
+              minLines: 1,
+              decoration: const InputDecoration(
+                labelText: 'Your side (you can answer once)',
+                border: OutlineInputBorder(),
+                isDense: true,
+              ),
+            ),
+            Align(
+              alignment: Alignment.centerRight,
+              child: FilledButton(
+                key: Key('complaint-reply-send-${widget.requestId}'),
+                onPressed: busy ? null : () => _send(c),
+                child: const Text('Send reply'),
+              ),
+            ),
+          ],
+          const SizedBox(height: 4),
+          Text(
+            outcome.trim(),
+            key: Key('complaint-outcome-${widget.requestId}'),
+            style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
+          ),
+        ],
+      ),
     );
   }
 }

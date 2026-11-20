@@ -2,8 +2,10 @@ import 'dart:typed_data';
 
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+import '../models/complaint.dart';
 import '../models/quote.dart';
 import '../models/service_provider.dart';
+import 'account_repository.dart';
 import 'zones.dart';
 
 /// A photo or voice note attached to a request.
@@ -71,6 +73,29 @@ abstract class ProviderRepository {
 
   /// The owner cancels their own request.
   Future<void> cancelRequest(String requestId);
+
+  /// The owner's latest finished job in the last 30 days, or null.
+  Future<LastJob?> lastJob();
+
+  /// The owner's complaint about this job, or null.
+  Future<Complaint?> complaintFor(String requestId);
+
+  /// The owner says something went wrong, in their own words. Once per job.
+  /// Asking for money back needs the M-Pesa number to send it to.
+  Future<void> raiseComplaint(
+    String requestId,
+    String message, {
+    bool wantsRefund = false,
+    String? refundPhone,
+  });
+}
+
+/// The server refused a complaint or reply; [message] says why, for the user.
+class ComplaintException implements Exception {
+  ComplaintException(this.message);
+  final String message;
+  @override
+  String toString() => message;
 }
 
 /// Real backend: Supabase (Postgres + PostGIS).
@@ -231,6 +256,52 @@ class SupabaseProviderRepository implements ProviderRepository {
           'p_comment': comment,
         },
       );
+
+  @override
+  Future<LastJob?> lastJob() async {
+    if (_client.auth.currentUser == null) return null;
+    final rows = await _client.rpc('my_last_job') as List;
+    if (rows.isEmpty) return null;
+    final r = rows.first as Map<String, dynamic>;
+    return (
+      requestId: r['request_id'] as String,
+      providerName: r['provider_name'] as String,
+      doneAt: DateTime.parse(r['done_at'] as String).toLocal(),
+    );
+  }
+
+  @override
+  Future<Complaint?> complaintFor(String requestId) async {
+    if (_client.auth.currentUser == null) return null;
+    final row = await _client
+        .from('complaints')
+        .select(Complaint.columns)
+        .eq('request_id', requestId)
+        .maybeSingle();
+    return row == null ? null : Complaint.fromRow(row);
+  }
+
+  @override
+  Future<void> raiseComplaint(
+    String requestId,
+    String message, {
+    bool wantsRefund = false,
+    String? refundPhone,
+  }) async {
+    try {
+      await _client.rpc(
+        'raise_complaint',
+        params: {
+          'p_request': requestId,
+          'p_message': message,
+          'p_wants_refund': wantsRefund,
+          'p_refund_phone': wantsRefund ? refundPhone : null,
+        },
+      );
+    } on PostgrestException catch (e) {
+      throw ComplaintException(e.message);
+    }
+  }
 }
 
 /// Built-in sample data, used until Supabase keys are supplied.
@@ -332,7 +403,65 @@ class SampleProviderRepository implements ProviderRepository {
       stars: null,
       comment: null,
     );
+    finishedAt = DateTime.now();
     _open = null;
+  }
+
+  /// When the last job was marked done. Tests can move it back in time.
+  DateTime? finishedAt;
+
+  /// Complaints by request id.
+  final Map<String, Complaint> complaints = {};
+
+  @override
+  Future<LastJob?> lastJob() async {
+    final f = finished;
+    final at = finishedAt;
+    if (f == null || at == null) return null;
+    if (DateTime.now().difference(at) > const Duration(days: 30)) return null;
+    return (requestId: f.requestId, providerName: f.providerName, doneAt: at);
+  }
+
+  @override
+  Future<Complaint?> complaintFor(String requestId) async =>
+      complaints[requestId];
+
+  @override
+  Future<void> raiseComplaint(
+    String requestId,
+    String message, {
+    bool wantsRefund = false,
+    String? refundPhone,
+  }) async {
+    // Same rules as the database.
+    final underWay = _open?.id == requestId && _open!.accepted;
+    final done =
+        finished?.requestId == requestId &&
+        DateTime.now().difference(finishedAt!) <= const Duration(days: 14);
+    if (!underWay && !done) {
+      throw ComplaintException(
+        'You can report a problem while a job is under way or up to 14 days after.',
+      );
+    }
+    if (complaints.containsKey(requestId)) {
+      throw ComplaintException('You already reported a problem with this job');
+    }
+    final text = message.trim();
+    if (text.length < 10) {
+      throw ComplaintException('Say in a few words what went wrong');
+    }
+    if (wantsRefund && normalizeKenyanPhone(refundPhone ?? '') == null) {
+      throw ComplaintException(
+        'Enter a Kenyan mobile number, for example 0712 345 678',
+      );
+    }
+    complaints[requestId] = Complaint(
+      id: 'c${complaints.length + 1}',
+      requestId: requestId,
+      message: text,
+      wantsRefund: wantsRefund,
+      createdAt: DateTime.now(),
+    );
   }
 
   /// Test hook: the mechanic marks the accepted job done.

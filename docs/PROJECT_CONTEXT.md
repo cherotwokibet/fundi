@@ -36,6 +36,30 @@ Every screen is tested against one question: does this make the owner do more?
 
 Gates: 90 verified providers live before Phase 2; 300 paid jobs in the pilot before Phase 3.
 
+## State of the build (20 Nov 2026, later)
+
+Every migration up to `20261121010000_job_done_reviews.sql` is applied live (the project
+owner confirmed 20 Nov).
+
+**Complaints and refunds** (`20261122000000_complaints_refunds.sql`, own SQL test
+`complaints_test.sql`). **Not yet applied live.**
+- The owner taps "Report a problem" on My repair while a job is under way, or
+  "Problem with the work by …?" on the home screen for 14 days after it is done. They say
+  what went wrong in their own words; nothing else to pick. Once per job.
+- "I want my money back" also asks for an M-Pesa number (owners are guests with no number
+  on file). Only admins can read it; the mechanic and even the owner's own reads cannot.
+- The mechanic sees the complaint on the job in their inbox, gets a text, and can answer once.
+- Admins decide on a new Complaints tab: upheld or not, with a note both sides read. A refund
+  needs an upheld complaint and is capped at what the job cost (approved quotes plus the
+  call-out fee). Paying in the app is not built, so the admin sends the refund by M-Pesa and
+  enters the code; the refund then shows as paid. The owner gets a text on their refund number.
+- `job_payout_on_hold(request)` is true while a complaint is open or a refund is due. The
+  M-Pesa step must check it before releasing held money to a mechanic.
+56 Flutter tests, eleven SQL test files.
+
+Next: M-Pesa through IntaSend once the sandbox keys arrive. Keys go into Supabase secrets
+(Edge Function), never into the repo or `--dart-define`.
+
 ## State of the build (20 Nov 2026)
 
 All migrations up to `20261120030000_sms_alerts.sql` are applied live (checked 20 Nov).

@@ -1,5 +1,6 @@
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+import '../models/complaint.dart';
 import '../models/quote.dart';
 import '../models/service_provider.dart';
 import 'account_repository.dart';
@@ -81,6 +82,12 @@ abstract class InboxRepository {
 
   /// The mechanic says the work on a job they took is done.
   Future<void> markDone(String requestId);
+
+  /// The owner's complaint about this job, or null.
+  Future<Complaint?> complaintFor(String requestId);
+
+  /// The mechanic's answer to a complaint. Once, while it is open.
+  Future<void> replyToComplaint(String complaintId, String reply);
 }
 
 class SupabaseInboxRepository implements InboxRepository {
@@ -151,6 +158,28 @@ class SupabaseInboxRepository implements InboxRepository {
         .limit(1)
         .maybeSingle();
     return row == null ? null : Quote.fromRow(row);
+  }
+
+  @override
+  Future<Complaint?> complaintFor(String requestId) async {
+    final row = await _client
+        .from('complaints')
+        .select(Complaint.columns)
+        .eq('request_id', requestId)
+        .maybeSingle();
+    return row == null ? null : Complaint.fromRow(row);
+  }
+
+  @override
+  Future<void> replyToComplaint(String complaintId, String reply) async {
+    try {
+      await _client.rpc(
+        'reply_to_complaint',
+        params: {'p_complaint': complaintId, 'p_reply': reply},
+      );
+    } on PostgrestException catch (e) {
+      throw AccountException(e.message);
+    }
   }
 }
 
@@ -268,5 +297,38 @@ class SampleInboxRepository implements InboxRepository {
       voicePath: r.voicePath,
       distanceKm: r.distanceKm,
     );
+  }
+
+  /// Complaints by request id. Tests add one with [ownerComplains].
+  final Map<String, Complaint> complaints = {};
+
+  /// Test hook: the owner of [requestId] reports a problem.
+  void ownerComplains(String requestId, String message) {
+    complaints[requestId] = Complaint(
+      id: 'sc${complaints.length + 1}',
+      requestId: requestId,
+      message: message,
+      createdAt: DateTime.now(),
+    );
+  }
+
+  @override
+  Future<Complaint?> complaintFor(String requestId) async =>
+      complaints[requestId];
+
+  @override
+  Future<void> replyToComplaint(String complaintId, String reply) async {
+    final entry = complaints.entries
+        .where((e) => e.value.id == complaintId)
+        .firstOrNull;
+    final c = entry?.value;
+    if (c == null || !c.open || c.providerReply != null) {
+      throw AccountException('You can reply once, while the complaint is open');
+    }
+    final text = reply.trim();
+    if (text.length < 2 || text.length > 500) {
+      throw AccountException('Write a reply of up to 500 characters');
+    }
+    complaints[entry!.key] = c.copyWith(providerReply: text);
   }
 }

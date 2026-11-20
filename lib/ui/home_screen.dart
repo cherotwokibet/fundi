@@ -10,6 +10,7 @@ import 'request_status_screen.dart';
 import 'safety_sheet.dart';
 import 'theme.dart';
 import 'widgets.dart';
+import 'complaint_ui.dart';
 import 'rate_card.dart';
 
 /// The whole product on one screen: two actions, no login, no categories.
@@ -87,6 +88,7 @@ class HomeScreen extends ConsumerWidget {
                       if (sample) ...[const SizedBox(height: 4), banner],
                       const SizedBox(height: 8),
                       const RateCard(),
+                      const LastJobProblem(),
                       const SizedBox(height: 8),
                       ConstrainedBox(
                         // Tall enough to feel like a page, short enough that
@@ -154,6 +156,7 @@ class HomeScreen extends ConsumerWidget {
                           if (sample) ...[const SizedBox(height: 4), banner],
                           const SizedBox(height: 8),
                           const RateCard(),
+                          const LastJobProblem(),
                           Expanded(child: hero),
                           const SizedBox(height: 10),
                           browse,

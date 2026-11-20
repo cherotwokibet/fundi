@@ -6,6 +6,7 @@ import 'package:url_launcher/url_launcher.dart';
 import '../data/account_repository.dart';
 import '../data/admin_repository.dart';
 import '../data/zones.dart';
+import '../models/complaint.dart';
 import '../models/service_provider.dart';
 import '../models/trade.dart';
 import '../state/app_state.dart';
@@ -25,7 +26,7 @@ class AdminScreen extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     return DefaultTabController(
-      length: 2,
+      length: 3,
       child: Scaffold(
         appBar: AppBar(
           title: const Text('Admin'),
@@ -51,12 +52,15 @@ class AdminScreen extends ConsumerWidget {
           ],
           bottom: const TabBar(
             tabs: [
-              Tab(key: Key('admin-tab-listings'), text: 'Mechanics & garages'),
+              Tab(key: Key('admin-tab-listings'), text: 'Mechanics'),
               Tab(key: Key('admin-tab-shops'), text: 'Parts shops'),
+              Tab(key: Key('admin-tab-complaints'), text: 'Complaints'),
             ],
           ),
         ),
-        body: const TabBarView(children: [_ListingsTab(), _ShopsTab()]),
+        body: const TabBarView(
+          children: [_ListingsTab(), _ShopsTab(), _ComplaintsTab()],
+        ),
       ),
     );
   }
@@ -1138,6 +1142,244 @@ class _MembersState extends ConsumerState<MembersScreen> {
               'Switching someone off takes their access away the next time the app checks.',
               style: TextStyle(fontSize: 13, color: muted),
             ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// Owners' reports. Decide each one with a note the owner reads, set a
+/// refund if upheld (capped at the job cost by the server), and record the
+/// M-Pesa code once the refund is sent.
+class _ComplaintsTab extends ConsumerStatefulWidget {
+  const _ComplaintsTab();
+
+  @override
+  ConsumerState<_ComplaintsTab> createState() => _ComplaintsState();
+}
+
+class _ComplaintsState extends ConsumerState<_ComplaintsTab> {
+  late Future<List<Complaint>> rows = ref.read(adminProvider).complaints();
+
+  void _reload() {
+    final next = ref.read(adminProvider).complaints();
+    setState(() {
+      rows = next;
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return ContentWidth(
+      max: 900,
+      child: FutureBuilder<List<Complaint>>(
+        future: rows,
+        builder: (context, snap) {
+          if (snap.hasError) {
+            return Center(
+              child: TextButton(
+                onPressed: _reload,
+                child: const Text('Could not load. Try again'),
+              ),
+            );
+          }
+          if (!snap.hasData) {
+            return const Center(child: CircularProgressIndicator());
+          }
+          final list = snap.data!;
+          if (list.isEmpty) {
+            return const Center(child: Text('No complaints.'));
+          }
+          return ListView(
+            padding: const EdgeInsets.all(16),
+            children: [
+              for (final c in list)
+                _ComplaintCard(c, key: ValueKey(c.id), onChanged: _reload),
+            ],
+          );
+        },
+      ),
+    );
+  }
+}
+
+class _ComplaintCard extends ConsumerStatefulWidget {
+  const _ComplaintCard(this.c, {super.key, required this.onChanged});
+  final Complaint c;
+  final VoidCallback onChanged;
+
+  @override
+  ConsumerState<_ComplaintCard> createState() => _ComplaintCardState();
+}
+
+class _ComplaintCardState extends ConsumerState<_ComplaintCard> {
+  final note = TextEditingController();
+  final refund = TextEditingController();
+  final code = TextEditingController();
+  bool busy = false;
+
+  Complaint get c => widget.c;
+
+  @override
+  void dispose() {
+    note.dispose();
+    refund.dispose();
+    code.dispose();
+    super.dispose();
+  }
+
+  Future<void> _do(Future<void> Function() action) async {
+    final messenger = ScaffoldMessenger.of(context);
+    setState(() => busy = true);
+    try {
+      await action();
+      widget.onChanged();
+    } catch (e) {
+      messenger.showSnackBar(SnackBar(content: Text(_friendly(e))));
+    } finally {
+      if (mounted) setState(() => busy = false);
+    }
+  }
+
+  Future<void> _decide(bool uphold) => _do(
+    () => ref
+        .read(adminProvider)
+        .resolveComplaint(
+          c.id,
+          uphold: uphold,
+          note: note.text.trim(),
+          refundKes: uphold ? int.tryParse(refund.text.trim()) ?? 0 : 0,
+        ),
+  );
+
+  @override
+  Widget build(BuildContext context) {
+    const small = TextStyle(fontSize: 13, color: muted);
+    final status = switch (c.status) {
+      ComplaintStatus.open => 'Open',
+      ComplaintStatus.upheld => 'Upheld',
+      ComplaintStatus.rejected => 'Not upheld',
+    };
+    return Card(
+      key: Key('complaint-${c.id}'),
+      margin: const EdgeInsets.only(bottom: 12),
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    c.providerName ?? 'Mechanic',
+                    style: const TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ),
+                Chip(label: Text(status), visualDensity: VisualDensity.compact),
+              ],
+            ),
+            Text(
+              '${c.providerPhone ?? ''} · ${clockText(c.createdAt)} · '
+              'job cost ${kes(c.jobCostKes ?? 0)}',
+              style: small,
+            ),
+            const SizedBox(height: 8),
+            Text('Owner: "${c.message}"'),
+            if (c.wantsRefund)
+              Text(
+                'Wants their money back. M-Pesa: +${c.refundPhone ?? '?'}',
+                style: const TextStyle(fontWeight: FontWeight.w600),
+              ),
+            const SizedBox(height: 4),
+            Text(
+              c.providerReply == null
+                  ? 'The mechanic has not answered.'
+                  : 'Mechanic: "${c.providerReply}"',
+              style: small,
+            ),
+            if (c.open) ...[
+              const SizedBox(height: 12),
+              TextField(
+                key: Key('complaint-note-${c.id}'),
+                controller: note,
+                maxLength: 500,
+                maxLines: 2,
+                minLines: 1,
+                decoration: const InputDecoration(
+                  labelText: 'Note for the owner and the mechanic',
+                  border: OutlineInputBorder(),
+                ),
+              ),
+              TextField(
+                key: Key('complaint-refund-${c.id}'),
+                controller: refund,
+                keyboardType: TextInputType.number,
+                inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                decoration: InputDecoration(
+                  labelText: 'Refund in KES if upheld (optional)',
+                  helperText: 'At most ${kes(c.jobCostKes ?? 0)}',
+                  border: const OutlineInputBorder(),
+                ),
+              ),
+              const SizedBox(height: 8),
+              Wrap(
+                spacing: 8,
+                children: [
+                  FilledButton(
+                    key: Key('complaint-uphold-${c.id}'),
+                    onPressed: busy ? null : () => _decide(true),
+                    child: const Text('Uphold'),
+                  ),
+                  OutlinedButton(
+                    key: Key('complaint-reject-${c.id}'),
+                    onPressed: busy ? null : () => _decide(false),
+                    child: const Text('Not upheld'),
+                  ),
+                ],
+              ),
+            ] else ...[
+              const SizedBox(height: 8),
+              Text('Decision: ${c.adminNote ?? ''}'),
+              if (c.refundStatus == RefundStatus.paid)
+                Text(
+                  'Refund of ${kes(c.refundKes)} paid. M-Pesa code ${c.refundReference}.',
+                  style: small,
+                ),
+              if (c.refundStatus == RefundStatus.due) ...[
+                const SizedBox(height: 8),
+                Text(
+                  'Refund due: ${kes(c.refundKes)} to +${c.refundPhone ?? '?'}',
+                  style: const TextStyle(fontWeight: FontWeight.w700),
+                ),
+                const SizedBox(height: 8),
+                TextField(
+                  key: Key('complaint-code-${c.id}'),
+                  controller: code,
+                  textCapitalization: TextCapitalization.characters,
+                  decoration: const InputDecoration(
+                    labelText: 'M-Pesa code of the refund',
+                    border: OutlineInputBorder(),
+                  ),
+                ),
+                const SizedBox(height: 8),
+                FilledButton(
+                  key: Key('complaint-paid-${c.id}'),
+                  onPressed: busy
+                      ? null
+                      : () => _do(
+                          () => ref
+                              .read(adminProvider)
+                              .markRefundPaid(c.id, code.text.trim()),
+                        ),
+                  child: const Text('Refund sent'),
+                ),
+              ],
+            ],
           ],
         ),
       ),

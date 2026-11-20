@@ -306,6 +306,77 @@ void main() {
       expect(find.text('Find me a mechanic'), findsOneWidget);
     });
 
+    Future<void> acceptedJob(WidgetTester tester) async {
+      await findMatch(tester);
+      await tester.tap(find.byKey(const Key('request-mechanic')));
+      await tester.pumpAndSettle();
+      repo.mechanicAccepts();
+      await tester.pump(RequestStatusScreen.checkEvery);
+      await tester.pumpAndSettle();
+    }
+
+    testWidgets('complaint: after a job the owner reports a problem in their '
+        'own words, and money back needs an M-Pesa number', (tester) async {
+      await pumpApp(tester);
+      expect(find.byKey(const Key('report-last-job')), findsNothing);
+      await acceptedJob(tester);
+      await tester.ensureVisible(find.byKey(const Key('status-done')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('status-done')));
+      await tester.pumpAndSettle();
+
+      // Home: rating and the small report link, the main actions untouched.
+      expect(find.byKey(const Key('rate-card')), findsOneWidget);
+      expect(find.text('Find me a mechanic'), findsOneWidget);
+      await tester.tap(find.byKey(const Key('report-last-job')));
+      await tester.pumpAndSettle();
+      await tester.enterText(
+        find.byKey(const Key('complaint-message')),
+        'The brakes still squeal',
+      );
+      await tester.tap(find.byKey(const Key('complaint-refund')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('complaint-send')));
+      await tester.pumpAndSettle();
+      expect(find.textContaining('Kenyan mobile number'), findsOneWidget);
+      expect(repo.complaints, isEmpty);
+
+      await tester.enterText(
+        find.byKey(const Key('complaint-phone')),
+        '0712 345 678',
+      );
+      await tester.tap(find.byKey(const Key('complaint-send')));
+      await tester.pumpAndSettle();
+      expect(find.text('We got your report'), findsOneWidget);
+      expect(find.byKey(const Key('report-last-job')), findsNothing);
+      final sent = repo.complaints.values.single;
+      expect(sent.message, 'The brakes still squeal');
+      expect(sent.wantsRefund, isTrue);
+    });
+
+    testWidgets('complaint: can be sent from My repair while the job is under '
+        'way, without asking for money back', (tester) async {
+      await pumpApp(tester);
+      await acceptedJob(tester);
+      await tester.ensureVisible(find.byKey(const Key('status-report')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('status-report')));
+      await tester.pumpAndSettle();
+      await tester.enterText(find.byKey(const Key('complaint-message')), 'bad');
+      await tester.tap(find.byKey(const Key('complaint-send')));
+      await tester.pumpAndSettle();
+      expect(find.text('Say in a few words what went wrong.'), findsOneWidget);
+      await tester.enterText(
+        find.byKey(const Key('complaint-message')),
+        'They asked for cash before starting',
+      );
+      await tester.tap(find.byKey(const Key('complaint-send')));
+      await tester.pumpAndSettle();
+      expect(find.text('We got your report'), findsOneWidget);
+      expect(find.byKey(const Key('status-report')), findsNothing);
+      expect(repo.complaints.values.single.wantsRefund, isFalse);
+    });
+
     testWidgets('find me: a photo and a voice note travel with the request', (
       tester,
     ) async {
@@ -1053,6 +1124,113 @@ void main() {
     },
   );
 
+  test(
+    'admin: no refund on a rejected complaint, or above the job cost',
+    () async {
+      final admin = SampleAdminRepository();
+      final c = (await admin.complaints()).single;
+      expect(
+        () => admin.resolveComplaint(
+          c.id,
+          uphold: false,
+          note: 'No',
+          refundKes: 500,
+        ),
+        throwsA(isA<AccountException>()),
+      );
+      expect(
+        () => admin.resolveComplaint(
+          c.id,
+          uphold: true,
+          note: 'Yes',
+          refundKes: 2501,
+        ),
+        throwsA(isA<AccountException>()),
+      );
+      expect(
+        () => admin.markRefundPaid(c.id, 'QX12'),
+        throwsA(isA<AccountException>()),
+      );
+    },
+  );
+
+  testWidgets('admin console: uphold a complaint with a refund, then record '
+      'the M-Pesa code', (tester) async {
+    final account = SampleAccountRepository();
+    await account.verifyCode(
+      SampleAccountRepository.adminPhone,
+      SampleAccountRepository.sampleCode,
+    );
+    final admin = SampleAdminRepository(account.directory);
+    tester.view.physicalSize = const Size(1080, 2340);
+    tester.view.devicePixelRatio = 2.75;
+    addTearDown(tester.view.reset);
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          accountProvider.overrideWithValue(account),
+          adminProvider.overrideWithValue(admin),
+          gpsLookupProvider.overrideWithValue(() async => null),
+        ],
+        child: const FundiApp(),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.ensureVisible(find.byKey(const Key('home-provider')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('home-provider')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('admin-tab-complaints')));
+    await tester.pumpAndSettle();
+
+    expect(find.textContaining('brakes still squeal'), findsOneWidget);
+    expect(find.textContaining('+254700000000'), findsOneWidget);
+    await tester.enterText(
+      find.byKey(const Key('complaint-note-sample-c1')),
+      'The pads were fitted badly.',
+    );
+    // Above the job cost: refused, nothing saved.
+    await tester.enterText(
+      find.byKey(const Key('complaint-refund-sample-c1')),
+      '3000',
+    );
+    await tester.ensureVisible(
+      find.byKey(const Key('complaint-uphold-sample-c1')),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('complaint-uphold-sample-c1')));
+    await tester.pumpAndSettle();
+    expect(
+      find.textContaining('cannot be more than the job cost'),
+      findsOneWidget,
+    );
+    expect(admin.sampleComplaints.single.open, isTrue);
+
+    await tester.enterText(
+      find.byKey(const Key('complaint-refund-sample-c1')),
+      '2000',
+    );
+    // Let the error message go so it does not cover the button.
+    await tester.pump(const Duration(seconds: 5));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('complaint-uphold-sample-c1')));
+    await tester.pumpAndSettle();
+    expect(find.text('Refund due: KES 2,000 to +254700000000'), findsOneWidget);
+
+    await tester.enterText(
+      find.byKey(const Key('complaint-code-sample-c1')),
+      'qx12ab34',
+    );
+    await tester.ensureVisible(
+      find.byKey(const Key('complaint-paid-sample-c1')),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('complaint-paid-sample-c1')));
+    await tester.pumpAndSettle();
+    expect(find.textContaining('M-Pesa code QX12AB34'), findsOneWidget);
+    expect(find.byKey(const Key('complaint-paid-sample-c1')), findsNothing);
+  });
+
   group('mechanic inbox', () {
     late _LinkedInbox inbox;
     late _FakePlayer player;
@@ -1197,6 +1375,44 @@ void main() {
       expect(find.text('Done'), findsOneWidget);
       expect(find.byKey(const Key('job-done-r1')), findsNothing);
       expect(find.byKey(const Key('send-quote-r1')), findsNothing);
+    });
+
+    testWidgets('a mechanic answers a complaint about their job, once', (
+      tester,
+    ) async {
+      await pumpApproved(tester);
+      inbox.ownerComplains('r1', 'The brakes still squeal after the repair');
+      await tester.tap(find.byKey(const Key('open-inbox')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('accept-r1')));
+      await tester.pumpAndSettle();
+      await tester.pump(const Duration(seconds: 5));
+      await tester.pumpAndSettle();
+      // Only on the job it is about.
+      expect(find.byKey(const Key('complaint-r2')), findsNothing);
+      await tester.ensureVisible(find.byKey(const Key('complaint-r1')));
+      await tester.pumpAndSettle();
+      expect(find.textContaining('brakes still squeal'), findsOneWidget);
+      await tester.enterText(
+        find.byKey(const Key('complaint-reply-r1')),
+        'I can come back tomorrow and adjust them',
+      );
+      await tester.ensureVisible(
+        find.byKey(const Key('complaint-reply-send-r1')),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('complaint-reply-send-r1')));
+      await tester.pumpAndSettle();
+      expect(find.textContaining('You answered'), findsOneWidget);
+      expect(find.byKey(const Key('complaint-reply-r1')), findsNothing);
+      expect(
+        (await inbox.complaintFor('r1'))!.providerReply,
+        'I can come back tomorrow and adjust them',
+      );
+      expect(
+        () => inbox.replyToComplaint('sc1', 'Again'),
+        throwsA(isA<AccountException>()),
+      );
     });
 
     testWidgets('take one request and pass on another', (tester) async {

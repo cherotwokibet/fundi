@@ -2,6 +2,7 @@ import 'dart:typed_data';
 
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+import '../models/complaint.dart';
 import '../models/service_provider.dart';
 import '../models/trade.dart';
 import 'account_repository.dart';
@@ -127,6 +128,21 @@ abstract class AdminRepository {
     String? name,
   );
   Future<void> setMemberActive(String memberId, bool active);
+
+  /// Complaints to decide and refunds to pay first, then recent ones.
+  Future<List<Complaint>> complaints();
+
+  /// Upheld or not, with a note the owner reads. A refund needs an upheld
+  /// complaint and is capped at what the job cost (checked by the server).
+  Future<void> resolveComplaint(
+    String complaintId, {
+    required bool uphold,
+    required String note,
+    int refundKes = 0,
+  });
+
+  /// The refund reached the owner. [reference] is the M-Pesa code.
+  Future<void> markRefundPaid(String complaintId, String reference);
 }
 
 class SupabaseAdminRepository implements AdminRepository {
@@ -337,6 +353,38 @@ class SupabaseAdminRepository implements AdminRepository {
     ),
   );
 
+  @override
+  Future<List<Complaint>> complaints() async {
+    final rows = await _guard(() => _client.rpc('admin_complaints')) as List;
+    return [for (final r in rows) Complaint.fromRow(r as Map<String, dynamic>)];
+  }
+
+  @override
+  Future<void> resolveComplaint(
+    String complaintId, {
+    required bool uphold,
+    required String note,
+    int refundKes = 0,
+  }) => _guard(
+    () => _client.rpc(
+      'admin_resolve_complaint',
+      params: {
+        'p_complaint': complaintId,
+        'p_uphold': uphold,
+        'p_note': note,
+        'p_refund_kes': refundKes,
+      },
+    ),
+  );
+
+  @override
+  Future<void> markRefundPaid(String complaintId, String reference) => _guard(
+    () => _client.rpc(
+      'admin_mark_refund_paid',
+      params: {'p_complaint': complaintId, 'p_reference': reference},
+    ),
+  );
+
   Future<dynamic> _guard(Future<dynamic> Function() call) async {
     try {
       return await call();
@@ -462,5 +510,80 @@ class SampleAdminRepository implements AdminRepository {
   @override
   Future<void> setMemberActive(String memberId, bool active) async {
     directory.members.firstWhere((m) => m.id == memberId).active = active;
+  }
+
+  /// One invented complaint, so the tab can be tried without a backend.
+  final List<Complaint> sampleComplaints = [
+    Complaint(
+      id: 'sample-c1',
+      requestId: 'sample-job-1',
+      message: 'Sample complaint: the brakes still squeal after the repair.',
+      wantsRefund: true,
+      refundPhone: '254700000000',
+      providerReply: 'Sample reply: I can come back and adjust them for free.',
+      createdAt: DateTime.now().subtract(const Duration(hours: 3)),
+      providerName: 'Otieno Mobile Mechanic (sample)',
+      providerPhone: '+254700000001',
+      jobCostKes: 2500,
+    ),
+  ];
+
+  int _i(String id) {
+    final i = sampleComplaints.indexWhere((c) => c.id == id);
+    if (i < 0) throw AccountException('Complaint not found');
+    return i;
+  }
+
+  @override
+  Future<List<Complaint>> complaints() async => [
+    ...sampleComplaints.where((c) => c.needsAdmin),
+    ...sampleComplaints.where((c) => !c.needsAdmin),
+  ];
+
+  @override
+  Future<void> resolveComplaint(
+    String complaintId, {
+    required bool uphold,
+    required String note,
+    int refundKes = 0,
+  }) async {
+    final i = _i(complaintId);
+    final c = sampleComplaints[i];
+    if (!c.open) throw AccountException('This complaint was already decided');
+    if (note.trim().length < 2) {
+      throw AccountException(
+        'Write a note for the owner, up to 500 characters',
+      );
+    }
+    if (refundKes > 0 && !uphold) {
+      throw AccountException('Only an upheld complaint can have a refund');
+    }
+    if (refundKes > (c.jobCostKes ?? 0)) {
+      throw AccountException(
+        'The refund cannot be more than the job cost (${kes(c.jobCostKes ?? 0)})',
+      );
+    }
+    sampleComplaints[i] = c.copyWith(
+      status: uphold ? ComplaintStatus.upheld : ComplaintStatus.rejected,
+      adminNote: note.trim(),
+      refundKes: refundKes,
+      refundStatus: refundKes > 0 ? RefundStatus.due : RefundStatus.none,
+    );
+  }
+
+  @override
+  Future<void> markRefundPaid(String complaintId, String reference) async {
+    final i = _i(complaintId);
+    final c = sampleComplaints[i];
+    if (c.refundStatus != RefundStatus.due) {
+      throw AccountException('No refund is due on this complaint');
+    }
+    if (reference.trim().length < 2) {
+      throw AccountException('Enter the M-Pesa code of the refund');
+    }
+    sampleComplaints[i] = c.copyWith(
+      refundStatus: RefundStatus.paid,
+      refundReference: reference.trim().toUpperCase(),
+    );
   }
 }

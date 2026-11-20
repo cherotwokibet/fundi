@@ -15,6 +15,7 @@ import '../data/provider_repository.dart';
 import '../data/voice_player.dart';
 import '../data/voice_recorder.dart';
 import '../data/zones.dart';
+import '../models/complaint.dart';
 import '../models/quote.dart';
 import '../models/service_provider.dart';
 import '../models/trade.dart';
@@ -245,3 +246,24 @@ final reviewDueProvider = FutureProvider<ReviewDue?>((ref) {
   ref.watch(requestVersionProvider);
   return ref.watch(repositoryProvider).reviewDue();
 });
+
+/// The owner's latest finished job, for "Report a problem" on the home screen.
+final lastJobProvider = FutureProvider<LastJob?>((ref) {
+  ref.watch(requestVersionProvider);
+  return ref.watch(repositoryProvider).lastJob();
+});
+
+/// The owner's complaint about a job, or null.
+final complaintProvider = FutureProvider.family<Complaint?, String>((
+  ref,
+  requestId,
+) {
+  ref.watch(requestVersionProvider);
+  return ref.watch(repositoryProvider).complaintFor(requestId);
+});
+
+/// The owner's complaint about a job in the mechanic's inbox, or null.
+final inboxComplaintProvider = FutureProvider.family<Complaint?, String>(
+  (ref, requestId) =>
+      ref.watch(inboxRepositoryProvider).complaintFor(requestId),
+);

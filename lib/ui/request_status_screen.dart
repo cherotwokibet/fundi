@@ -8,6 +8,7 @@ import '../models/quote.dart';
 import '../models/service_provider.dart';
 import '../state/app_state.dart';
 import 'browse_screen.dart';
+import 'complaint_ui.dart';
 import 'quote_screen.dart';
 import 'theme.dart';
 import 'widgets.dart';
@@ -223,6 +224,7 @@ class _State extends ConsumerState<RequestStatusScreen> {
             onPressed: cancelling ? null : () => _done(r),
             child: const Text('The work is done'),
           ),
+          _ProblemSection(requestId: r.id, mechanic: name),
           cancel,
         ],
       );
@@ -485,6 +487,42 @@ class _QuoteCardState extends ConsumerState<_QuoteCard> {
           ],
         ),
       ),
+    );
+  }
+}
+
+/// While a job is under way: "Report a problem", or what happened to the
+/// report the owner already sent.
+class _ProblemSection extends ConsumerWidget {
+  const _ProblemSection({required this.requestId, required this.mechanic});
+  final String requestId;
+  final String mechanic;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final state = ref.watch(complaintProvider(requestId));
+    if (!state.hasValue) return const SizedBox.shrink();
+    final c = state.value;
+    if (c != null) return OwnerComplaintCard(c, mechanic: mechanic);
+    return TextButton(
+      key: const Key('status-report'),
+      style: TextButton.styleFrom(foregroundColor: muted),
+      onPressed: () async {
+        final messenger = ScaffoldMessenger.of(context);
+        final sent = await showReportProblem(
+          context,
+          requestId: requestId,
+          mechanic: mechanic,
+        );
+        if (sent) {
+          messenger.showSnackBar(
+            const SnackBar(
+              content: Text('Report sent. The outcome will show here.'),
+            ),
+          );
+        }
+      },
+      child: const Text('Report a problem'),
     );
   }
 }
