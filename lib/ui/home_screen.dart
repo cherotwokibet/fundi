@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../models/service_provider.dart';
 import '../state/app_state.dart';
 import 'browse_screen.dart';
 import 'find_screen.dart';
@@ -43,7 +44,12 @@ class HomeScreen extends ConsumerWidget {
         style: TextStyle(fontSize: 13),
       ),
     );
-    final hero = _Hero(onFind: () => go(const FindScreen()));
+    final free = ref
+        .watch(nearbyProvider)
+        .value
+        ?.where((p) => p.availability == Availability.available)
+        .length;
+    final hero = _Hero(freeNearby: free, onFind: () => go(const FindScreen()));
     final browse = ActionTile(
       key: const Key('home-browse'),
       icon: Icons.call_rounded,
@@ -153,10 +159,10 @@ class HomeScreen extends ConsumerWidget {
                           Expanded(child: hero),
                           const SizedBox(height: 10),
                           browse,
-                          const SizedBox(height: 12),
-                          trust,
-                          const SizedBox(height: 12),
+                          const SizedBox(height: 10),
                           safety,
+                          const SizedBox(height: 14),
+                          const _TrustRow(),
                         ],
                       ),
                     ),
@@ -305,8 +311,11 @@ class _Header extends StatelessWidget {
 }
 
 class _Hero extends StatelessWidget {
-  const _Hero({required this.onFind});
+  const _Hero({required this.onFind, this.freeNearby});
   final VoidCallback onFind;
+
+  /// Checked mechanics marked available near the owner; null while loading.
+  final int? freeNearby;
 
   @override
   Widget build(BuildContext context) {
@@ -336,16 +345,46 @@ class _Hero extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Text(
-                  'VERIFIED MECHANICS · NAIROBI',
-                  style: TextStyle(
-                    color: lime,
-                    fontWeight: FontWeight.w700,
-                    fontSize: 13,
-                    letterSpacing: 1.3,
+                Container(
+                  key: const Key('home-free'),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 10,
+                    vertical: 5,
+                  ),
+                  decoration: BoxDecoration(
+                    color: lime.withValues(alpha: 0.16),
+                    borderRadius: BorderRadius.circular(99),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Container(
+                        width: 8,
+                        height: 8,
+                        decoration: const BoxDecoration(
+                          color: lime,
+                          shape: BoxShape.circle,
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Flexible(
+                        child: Text(
+                          switch (freeNearby) {
+                            null || 0 => 'Verified mechanics · Nairobi',
+                            1 => '1 checked mechanic free near you',
+                            final n => '$n checked mechanics free near you',
+                          },
+                          style: const TextStyle(
+                            color: lime,
+                            fontWeight: FontWeight.w700,
+                            fontSize: 13,
+                          ),
+                        ),
+                      ),
+                    ],
                   ),
                 ),
-                const SizedBox(height: 10),
+                const SizedBox(height: 12),
                 Text(
                   'Car trouble?',
                   style: heading(
@@ -355,7 +394,7 @@ class _Hero extends StatelessWidget {
                 ),
                 const SizedBox(height: 10),
                 const Text(
-                  'A checked mechanic nearby will sort it out. You don\'t need to know what\'s wrong.',
+                  "You don't need to know what's wrong. A checked mechanic nearby will sort it out.",
                   style: TextStyle(
                     color: Color(0xFFE4EBE6),
                     fontSize: 16,
@@ -408,9 +447,21 @@ class _SafetyLink extends StatelessWidget {
                 Icon(Icons.warning_amber_rounded, color: warnInk),
                 SizedBox(width: 12),
                 Expanded(
-                  child: Text(
-                    'Accident or unsafe location?',
-                    style: TextStyle(fontWeight: FontWeight.w600, fontSize: 15),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Accident or unsafe location?',
+                        style: TextStyle(
+                          fontWeight: FontWeight.w600,
+                          fontSize: 15,
+                        ),
+                      ),
+                      Text(
+                        'Emergency numbers first',
+                        style: TextStyle(fontSize: 13, color: warnInk),
+                      ),
+                    ],
                   ),
                 ),
                 Icon(Icons.chevron_right, color: warnInk),
@@ -419,6 +470,57 @@ class _SafetyLink extends StatelessWidget {
           ),
         ),
       ),
+    );
+  }
+}
+
+/// Phone only: three reasons to trust the app, in a few words each.
+class _TrustRow extends StatelessWidget {
+  const _TrustRow();
+
+  @override
+  Widget build(BuildContext context) {
+    const items = [
+      (Icons.verified_outlined, 'ID-checked', 'Visited by our team'),
+      (Icons.receipt_long_outlined, 'Price first', 'Approve every shilling'),
+      (Icons.support_agent_outlined, 'We step in', 'Report a problem'),
+    ];
+    return Row(
+      key: const Key('home-trust'),
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        for (final (i, (icon, title, body)) in items.indexed) ...[
+          if (i > 0) const SizedBox(width: 8),
+          Expanded(
+            child: Container(
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(14),
+                border: Border.all(color: hairline),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Icon(icon, size: 18, color: forest),
+                  const SizedBox(height: 4),
+                  Text(
+                    title,
+                    style: const TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                  Text(
+                    body,
+                    style: const TextStyle(fontSize: 12, color: muted),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ],
     );
   }
 }

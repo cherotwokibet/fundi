@@ -201,15 +201,33 @@ class _State extends ConsumerState<RequestStatusScreen> {
       final at = r.respondedAt == null
           ? ''
           : ' at ${clockText(r.respondedAt!)}';
+      final quote = ref.watch(quoteProvider(r.id)).value;
       return _layout(
-        title: 'Request accepted',
-        subtitle: '$name accepted your request$at.',
-        badge: const _Badge(icon: Icons.check_rounded, strong: true),
+        title: '$name took your request',
+        subtitle: 'Accepted$at. Call to agree where to meet.',
+        badge: _MechanicCard(name: name, status: 'Accepted'),
         children: [
-          const Text(
-            'Call to agree where to meet. If they send a quote, it shows here. '
-            'You pay the mechanic directly for now; paying in the app comes later.',
-            style: TextStyle(color: muted, fontSize: 14, height: 1.4),
+          _Step(
+            done: true,
+            title: 'Request sent',
+            note: clockText(r.createdAt),
+          ),
+          _Step(
+            done: true,
+            title: '$name took it',
+            note: r.respondedAt == null ? '' : clockText(r.respondedAt!),
+          ),
+          _Step(
+            done: quote != null,
+            title: 'Checks the car and sends a price',
+            note: quote == null
+                ? 'You see every line before any work starts.'
+                : 'Price sent: ${quote.totalText}',
+          ),
+          _Step(
+            done: quote?.status == QuoteStatus.approved,
+            title: 'You approve, then the work is done',
+            note: 'Pay the mechanic directly for now.',
           ),
           const SizedBox(height: 16),
           _QuoteCard(requestId: r.id, mechanic: name),
@@ -246,7 +264,7 @@ class _State extends ConsumerState<RequestStatusScreen> {
           'The last mechanic didn\'t answer, so we sent your request to $name.',
         Handoff.first => '$name has your request.',
       },
-      badge: const _Badge(icon: Icons.schedule_rounded),
+      badge: _MechanicCard(name: name, status: 'Waiting for an answer'),
       children: [
         _Step(
           done: true,
@@ -299,9 +317,9 @@ class _State extends ConsumerState<RequestStatusScreen> {
       padding: const EdgeInsets.fromLTRB(20, 0, 20, 24),
       children: [
         ScreenTitle(title, subtitle: Text(subtitle)),
-        const SizedBox(height: 20),
-        Center(child: badge),
         const SizedBox(height: 16),
+        badge is _Badge ? Center(child: badge) : badge,
+        const SizedBox(height: 12),
         ...children,
       ],
     );
@@ -309,9 +327,8 @@ class _State extends ConsumerState<RequestStatusScreen> {
 }
 
 class _Badge extends StatelessWidget {
-  const _Badge({required this.icon, this.strong = false});
+  const _Badge({required this.icon});
   final IconData icon;
-  final bool strong;
 
   @override
   Widget build(BuildContext context) {
@@ -319,18 +336,15 @@ class _Badge extends StatelessWidget {
       width: 112,
       height: 112,
       decoration: BoxDecoration(
-        color: strong ? const Color(0x1F135C37) : const Color(0x59D8F27E),
+        color: const Color(0x59D8F27E),
         shape: BoxShape.circle,
       ),
       alignment: Alignment.center,
       child: Container(
         width: 72,
         height: 72,
-        decoration: BoxDecoration(
-          color: strong ? forest : lime,
-          shape: BoxShape.circle,
-        ),
-        child: Icon(icon, size: 36, color: strong ? lime : forest),
+        decoration: BoxDecoration(color: lime, shape: BoxShape.circle),
+        child: Icon(icon, size: 36, color: forest),
       ),
     );
   }
@@ -459,22 +473,29 @@ class _QuoteCardState extends ConsumerState<_QuoteCard> {
               },
               style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w700),
             ),
-            const SizedBox(height: 8),
+            if (q.waiting)
+              const Padding(
+                padding: EdgeInsets.only(top: 4),
+                child: Text(
+                  'Nothing is done until you approve. Ask about any line first.',
+                  style: TextStyle(color: muted, fontSize: 13),
+                ),
+              ),
+            const SizedBox(height: 10),
             QuoteLines(q),
             if (q.waiting) ...[
-              const SizedBox(height: 12),
-              FilledButton(
+              const SizedBox(height: 14),
+              BigButton(
                 key: const Key('quote-approve'),
-                style: FilledButton.styleFrom(
-                  minimumSize: const Size.fromHeight(52),
-                ),
+                label: 'Approve ${q.totalText}',
                 onPressed: busy ? null : () => _answer(q, true),
-                child: Text('Approve ${q.totalText}'),
               ),
-              TextButton(
+              const SizedBox(height: 8),
+              BigButton(
                 key: const Key('quote-decline'),
+                label: 'Decline',
+                kind: ButtonKind.tint,
                 onPressed: busy ? null : () => _answer(q, false),
-                child: const Text('Decline'),
               ),
             ] else if (q.status == QuoteStatus.declined)
               const Padding(
@@ -523,6 +544,98 @@ class _ProblemSection extends ConsumerWidget {
         }
       },
       child: const Text('Report a problem'),
+    );
+  }
+}
+
+/// Who has the request: initials, name, the ID check and the state in words.
+class _MechanicCard extends StatelessWidget {
+  const _MechanicCard({required this.name, required this.status});
+  final String name;
+  final String status;
+
+  @override
+  Widget build(BuildContext context) {
+    final initials = name
+        .split(RegExp(r'\s+'))
+        .where((w) => w.isNotEmpty)
+        .take(2)
+        .map((w) => w[0].toUpperCase())
+        .join();
+    return Container(
+      key: const Key('status-mechanic'),
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: hairline),
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 48,
+            height: 48,
+            alignment: Alignment.center,
+            decoration: const BoxDecoration(
+              color: forest,
+              shape: BoxShape.circle,
+            ),
+            child: Text(
+              initials,
+              style: const TextStyle(
+                color: lime,
+                fontWeight: FontWeight.w800,
+                fontSize: 17,
+              ),
+            ),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  name,
+                  style: const TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 4,
+                  crossAxisAlignment: WrapCrossAlignment.center,
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 8,
+                        vertical: 3,
+                      ),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFDCEFE2),
+                        borderRadius: BorderRadius.circular(99),
+                      ),
+                      child: const Text(
+                        'ID checked',
+                        style: TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w700,
+                          color: Color(0xFF135C37),
+                        ),
+                      ),
+                    ),
+                    Text(
+                      status,
+                      style: const TextStyle(fontSize: 13, color: muted),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
     );
   }
 }

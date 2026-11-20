@@ -51,7 +51,21 @@ in the chat). Order agreed: admin console first, then the owner app, garage and 
 - Lists have a filter and the add button in one row, cards show initials and
   "x of y checks", and empty lists say what will appear there.
 Not built from the design yet: live requests table, side-by-side detail view, search.
-63 Flutter tests.
+
+**Owner app restyled** (same flows and rules, no new steps):
+- Home: a live "N checked mechanics free near you" pill in the hero (from the nearby
+  list, only those marked Available), the safety tile says "Emergency numbers first",
+  and on phones a row of three trust cards (ID-checked, Price first, We step in).
+- My repair: a mechanic card (initials, name, ID checked, state in words) replaces the
+  big round badge; once accepted, four steps show where the job is (sent, taken,
+  price, approve and done).
+- Quote: each line has its kind above it, a bold total, "Nothing is done until you
+  approve", and full-width Approve (lime) and Decline buttons. Mechanics see the
+  same line style.
+Left out on purpose: the map and arrival time (no mechanic location is collected),
+paying through Fundi (M-Pesa not built), and a bottom tab bar (the My repair button
+in the header already does this without adding a step).
+64 Flutter tests.
 
 ## Separate portal links (20 Nov 2026, evening)
 

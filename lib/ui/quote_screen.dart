@@ -14,56 +14,76 @@ class QuoteLines extends StatelessWidget {
   const QuoteLines(this.quote, {super.key});
   final Quote quote;
 
+  static const _money = TextStyle(
+    fontWeight: FontWeight.w600,
+    fontFeatures: [FontFeature.tabularFigures()],
+  );
+
   @override
   Widget build(BuildContext context) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         for (final l in quote.lines)
-          Padding(
-            padding: const EdgeInsets.symmetric(vertical: 3),
+          Container(
+            padding: const EdgeInsets.symmetric(vertical: 10),
+            decoration: const BoxDecoration(
+              border: Border(top: BorderSide(color: Color(0xFFEEF0EC))),
+            ),
             child: Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Expanded(
-                  child: Text.rich(
-                    TextSpan(
-                      children: [
-                        TextSpan(text: l.text),
-                        TextSpan(
-                          text: '  ${l.kind.label}',
-                          style: const TextStyle(fontSize: 12, color: muted),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        l.kind.label.toUpperCase(),
+                        style: const TextStyle(
+                          fontSize: 11,
+                          fontWeight: FontWeight.w700,
+                          letterSpacing: 0.5,
+                          color: muted,
                         ),
-                      ],
-                    ),
+                      ),
+                      Text(l.text, style: const TextStyle(fontSize: 15)),
+                    ],
                   ),
                 ),
                 const SizedBox(width: 8),
-                Text(kes(l.totalKes)),
+                Text(kes(l.totalKes), style: _money),
               ],
             ),
           ),
-        const Divider(),
-        Row(
-          children: [
-            const Expanded(
-              child: Text(
-                'Total',
-                style: TextStyle(fontWeight: FontWeight.w800, fontSize: 16),
+        Container(
+          padding: const EdgeInsets.only(top: 10),
+          decoration: const BoxDecoration(
+            border: Border(top: BorderSide(color: ink, width: 2)),
+          ),
+          child: Row(
+            children: [
+              const Expanded(
+                child: Text(
+                  'Total',
+                  style: TextStyle(fontWeight: FontWeight.w800, fontSize: 16),
+                ),
               ),
-            ),
-            Text(
-              quote.totalText,
-              key: const Key('quote-total'),
-              style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 16),
-            ),
-          ],
+              Text(
+                quote.totalText,
+                key: const Key('quote-total'),
+                style: _money.copyWith(
+                  fontWeight: FontWeight.w800,
+                  fontSize: 20,
+                ),
+              ),
+            ],
+          ),
         ),
         if (quote.note != null) ...[
-          const SizedBox(height: 6),
+          const SizedBox(height: 8),
           Text(
             '"${quote.note}"',
-            style: const TextStyle(fontStyle: FontStyle.italic),
+            style: const TextStyle(fontStyle: FontStyle.italic, color: muted),
           ),
         ],
       ],

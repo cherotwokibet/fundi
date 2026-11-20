@@ -141,6 +141,15 @@ void main() {
       expect(find.byKey(const Key('home-my-repair')), findsNothing);
     });
 
+    testWidgets('home says how many checked mechanics are free, and why '
+        'to trust them', (tester) async {
+      await pumpApp(tester);
+      expect(find.textContaining('free near you'), findsOneWidget);
+      expect(find.byKey(const Key('home-trust')), findsOneWidget);
+      expect(find.text('Price first'), findsOneWidget);
+      expect(find.text('Emergency numbers first'), findsOneWidget);
+    });
+
     testWidgets('browse then call: two taps open the dialer and log the tap', (
       tester,
     ) async {
@@ -207,7 +216,7 @@ void main() {
       repo.mechanicAccepts();
       await tester.pump(RequestStatusScreen.checkEvery);
       await tester.pumpAndSettle();
-      expect(find.text('Request accepted'), findsOneWidget);
+      expect(find.textContaining('took your request'), findsOneWidget);
       await tester.tap(find.byKey(const Key('status-call')));
       await tester.pump();
       expect(dialed, ['+254700000001']);
