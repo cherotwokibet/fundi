@@ -1141,6 +1141,12 @@ void main() {
     }
   });
 
+  test('the test codes page keeps its key in the address', () {
+    const app = FundiApp(codesKey: 'a-long-test-key-0123456789');
+    expect(app.firstRouteName, '/?testcodes=a-long-test-key-0123456789');
+    expect(const FundiApp(portal: Portal.admin).firstRouteName, '/admin');
+  });
+
   testWidgets('each portal sign-in says what it is for', (tester) async {
     for (final (portal, title) in [
       (Portal.admin, 'Fundi admin'),

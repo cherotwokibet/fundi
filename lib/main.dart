@@ -89,9 +89,20 @@ class FundiApp extends StatelessWidget {
     );
   }
 
+  bool get _codesPage => codesKey != null && codesKey!.isNotEmpty;
+
+  /// The address shown for the first screen. The test codes page keeps its
+  /// key, so the address can be bookmarked or shared after it loads.
+  String get firstRouteName => _codesPage
+      ? Uri(
+          path: portal.path,
+          queryParameters: {'testcodes': codesKey!},
+        ).toString()
+      : portal.path;
+
   Route<void> _firstRoute() => MaterialPageRoute<void>(
-    settings: RouteSettings(name: portal.path),
-    builder: (_) => (codesKey != null && codesKey!.isNotEmpty)
+    settings: RouteSettings(name: firstRouteName),
+    builder: (_) => _codesPage
         ? DevCodesScreen(codesKey!)
         : portal == Portal.owner
         ? const HomeScreen()
