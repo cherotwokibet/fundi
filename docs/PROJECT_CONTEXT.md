@@ -38,11 +38,16 @@ Gates: 90 verified providers live before Phase 2; 300 paid jobs in the pilot bef
 
 ## State of the build (20 Nov 2026, later)
 
-Every migration up to `20261121010000_job_done_reviews.sql` is applied live (the project
-owner confirmed 20 Nov).
+Every migration up to and including `20261122000000_complaints_refunds.sql` is applied
+live (20 Nov). Job done and reviews turned out not to be live yet; it was applied the same
+day, just before complaints. Several earlier migrations were run from the SQL editor, so
+the live migration history does not list them; check for the objects, not the history.
+Supabase grants every new table to `anon` and `authenticated` by default, which the local
+test stub does not copy: a migration that limits columns must `revoke all` first.
 
 **Complaints and refunds** (`20261122000000_complaints_refunds.sql`, own SQL test
-`complaints_test.sql`). **Not yet applied live.**
+`complaints_test.sql`). Applied live; access checked there (no table-level grants, no
+access to the refund number). Not yet tried end to end in the live app.
 - The owner taps "Report a problem" on My repair while a job is under way, or
   "Problem with the work by …?" on the home screen for 14 days after it is done. They say
   what went wrong in their own words; nothing else to pick. Once per job.

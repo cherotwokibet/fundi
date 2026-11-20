@@ -55,6 +55,9 @@ create policy complaints_read on public.complaints for select
                      where p.id = provider_id and p.owner_user_id = auth.uid()));
 -- Every column but the owner's refund number, which only admins read (through
 -- admin_complaints). The mechanic never gets the owner's number this way.
+-- Supabase grants every new table to anon and authenticated by default, so
+-- take that away first or the column list below means nothing.
+revoke all on public.complaints from public, anon, authenticated;
 grant select (id, request_id, provider_id, user_id, message, wants_refund, provider_reply,
               replied_at, status, admin_note, resolved_at, resolved_by, refund_kes,
               refund_status, refund_reference, refund_paid_at, created_at)
