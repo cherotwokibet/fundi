@@ -16,6 +16,15 @@ const warnInk = Color(0xFF7A4B00);
 const warnFill = Color(0xFFFFF8E8);
 const warnLine = Color(0xFFF1D9A6);
 
+// Waiting on someone else (quote sent, checks to do): 7.9:1.
+const infoInk = Color(0xFF1D4E89);
+const infoFill = Color(0xFFE3ECF8);
+// Complaints and things gone wrong: 7.0:1.
+const alertInk = Color(0xFF9E2318);
+const alertFill = Color(0xFFFBE9E7);
+// Work consoles (admin, garage board, shop orders) sit on a slightly darker page.
+const consolePage = Color(0xFFF4F3EE);
+
 // Older names, still used by the mechanic and admin screens.
 const brandGreen = forest;
 const callGreen = forest;

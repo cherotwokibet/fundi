@@ -720,6 +720,8 @@ void main() {
       await pumpApp(tester, portal: Portal.admin);
       await signIn(tester, '0700 000 000');
       expect(find.text('Admin'), findsOneWidget);
+      await tester.tap(find.byKey(const Key('admin-tab-listings')));
+      await tester.pumpAndSettle();
 
       await tester.tap(find.byKey(const Key('admin-add-listing')));
       await tester.pumpAndSettle();
@@ -1169,6 +1171,45 @@ void main() {
     }
   });
 
+  testWidgets(
+    'admin console on a laptop: sidebar with counts, overview first',
+    (tester) async {
+      final account = SampleAccountRepository();
+      await account.verifyCode(
+        SampleAccountRepository.adminPhone,
+        SampleAccountRepository.sampleCode,
+      );
+      tester.view.physicalSize = const Size(1440, 900);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [
+            accountProvider.overrideWithValue(account),
+            gpsLookupProvider.overrideWithValue(() async => null),
+          ],
+          child: const FundiApp(portal: Portal.admin),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(tester.takeException(), isNull);
+      expect(find.text('Overview'), findsWidgets);
+      expect(find.byKey(const Key('kpi-live')), findsOneWidget);
+      expect(find.byKey(const Key('admin-sign-out')), findsOneWidget);
+      // No bottom tabs on a laptop.
+      expect(find.byType(NavigationBar), findsNothing);
+      final side = tester.getRect(
+        find.byKey(const Key('admin-tab-complaints')),
+      );
+      expect(side.left, lessThan(260));
+
+      await tester.tap(find.byKey(const Key('admin-tab-complaints')));
+      await tester.pumpAndSettle();
+      expect(find.textContaining('brakes still squeal'), findsOneWidget);
+      expect(tester.takeException(), isNull);
+    },
+  );
+
   test('admin: cannot approve before identity is checked', () async {
     final admin = SampleAdminRepository();
     var waiting = await admin.listings(ListingStatus.pending);
@@ -1209,6 +1250,11 @@ void main() {
       );
       await tester.pumpAndSettle();
       expect(find.text('Admin'), findsOneWidget);
+      // Opens on the overview: the waiting check is the first task.
+      expect(find.byKey(const Key('needs-you')), findsOneWidget);
+      expect(find.text('Next: Mwangi Mobile Mechanic'), findsOneWidget);
+      await tester.tap(find.byKey(const Key('task-checks')));
+      await tester.pumpAndSettle();
       expect(find.text('Mwangi Mobile Mechanic'), findsOneWidget);
       await tester.ensureVisible(find.byKey(const Key('check-p1-identity')));
       await tester.pumpAndSettle();

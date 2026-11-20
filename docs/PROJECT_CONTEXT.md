@@ -36,6 +36,23 @@ Every screen is tested against one question: does this make the owner do more?
 
 Gates: 90 verified providers live before Phase 2; 300 paid jobs in the pilot before Phase 3.
 
+## Portal redesign (20 Nov 2026, night)
+
+The owner found the screens plain and hard to use, so every portal was redesigned
+first: https://claude.ai/artifact/5SCfdYUeDtJ7zazmkbgevw (12 screens, research notes
+in the chat). Order agreed: admin console first, then the owner app, garage and parts.
+
+**Admin console rebuilt** (`lib/ui/admin_screen.dart`, `lib/ui/admin_overview.dart`):
+- Laptop (1000 px and up): forest sidebar with counts on Mechanics & garages and
+  Complaints; Parts catalogue and Sign out in it. Phone: tabs along the bottom.
+- Opens on **Overview**: four number tiles (verified and live out of 90, waiting for
+  checks, parts shops open, open complaints and refunds due) and a **Needs you** list
+  whose buttons jump to the right section.
+- Lists have a filter and the add button in one row, cards show initials and
+  "x of y checks", and empty lists say what will appear there.
+Not built from the design yet: live requests table, side-by-side detail view, search.
+63 Flutter tests.
+
 ## Separate portal links (20 Nov 2026, evening)
 
 Each kind of user has its own link on the same site (one Flutter build):

@@ -10,6 +10,7 @@ import '../models/complaint.dart';
 import '../models/service_provider.dart';
 import '../models/trade.dart';
 import '../state/app_state.dart';
+import 'admin_overview.dart';
 import 'parts_screen.dart';
 import 'theme.dart';
 import 'widgets.dart';
@@ -20,47 +21,371 @@ String _friendly(Object e) =>
 /// Admin console. Admins are the only way onto the trade side: they add
 /// every garage, mobile mechanic and parts shop, and the people who work
 /// there, then check and approve them.
-class AdminScreen extends ConsumerWidget {
+///
+/// Laptop: a dark sidebar beside the page. Phone: tabs along the bottom.
+/// It opens on the overview, which says what needs the admin first.
+class AdminScreen extends ConsumerStatefulWidget {
   const AdminScreen({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    return DefaultTabController(
-      length: 3,
-      child: Scaffold(
-        appBar: AppBar(
-          title: const Text('Admin'),
-          actions: [
-            TextButton(
-              key: const Key('admin-parts'),
-              onPressed: () => Navigator.of(context).push(
-                MaterialPageRoute<void>(
-                  builder: (_) => const PartsMarketScreen(
-                    access: TradeAccess(isAdmin: true),
-                  ),
-                ),
+  ConsumerState<AdminScreen> createState() => _AdminScreenState();
+}
+
+class _AdminScreenState extends ConsumerState<AdminScreen> {
+  AdminSection section = AdminSection.overview;
+  late Future<AdminSnapshot> counts = _counts();
+
+  Future<AdminSnapshot> _counts() =>
+      AdminSnapshot.load(ref.read(adminProvider));
+
+  void _go(AdminSection to) {
+    final next = _counts();
+    setState(() {
+      section = to;
+      counts = next;
+    });
+  }
+
+  Future<void> _signOut() async {
+    await ref.read(accountProvider).signOut();
+    ref.read(accountVersionProvider.notifier).bump();
+  }
+
+  void _openParts() => Navigator.of(context).push(
+    MaterialPageRoute<void>(
+      builder: (_) =>
+          const PartsMarketScreen(access: TradeAccess(isAdmin: true)),
+    ),
+  );
+
+  static const _titles = {
+    AdminSection.overview: (
+      'Overview',
+      'What needs you, and how the network is growing.',
+    ),
+    AdminSection.listings: (
+      'Mechanics and garages',
+      'Nobody is shown to owners until the ID check is passed.',
+    ),
+    AdminSection.shops: (
+      'Parts shops',
+      'Only approved garages and mechanics can see their parts.',
+    ),
+    AdminSection.complaints: (
+      'Complaints',
+      'Decide with a note both sides can read. Refunds are capped at what the job cost.',
+    ),
+  };
+
+  Widget _body() => switch (section) {
+    AdminSection.overview => AdminOverview(
+      key: const ValueKey('overview'),
+      onGo: _go,
+    ),
+    AdminSection.listings => const _ListingsTab(key: ValueKey('listings')),
+    AdminSection.shops => const _ShopsTab(key: ValueKey('shops')),
+    AdminSection.complaints => const _ComplaintsTab(
+      key: ValueKey('complaints'),
+    ),
+  };
+
+  @override
+  Widget build(BuildContext context) {
+    final wide = MediaQuery.sizeOf(context).width >= 1000;
+    final (title, subtitle) = _titles[section]!;
+    final content = Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Padding(
+          padding: EdgeInsets.fromLTRB(20, wide ? 28 : 8, 20, 16),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(title, style: heading(wide ? 30 : 24)),
+              const SizedBox(height: 4),
+              Text(
+                subtitle,
+                style: const TextStyle(fontSize: 14, color: muted),
               ),
-              child: const Text('Parts'),
-            ),
-            TextButton(
-              onPressed: () async {
-                await ref.read(accountProvider).signOut();
-                ref.read(accountVersionProvider.notifier).bump();
-              },
-              child: const Text('Sign out'),
-            ),
-          ],
-          bottom: const TabBar(
-            tabs: [
-              Tab(key: Key('admin-tab-listings'), text: 'Mechanics'),
-              Tab(key: Key('admin-tab-shops'), text: 'Parts shops'),
-              Tab(key: Key('admin-tab-complaints'), text: 'Complaints'),
             ],
           ),
         ),
-        body: const TabBarView(
-          children: [_ListingsTab(), _ShopsTab(), _ComplaintsTab()],
+        Expanded(child: _body()),
+      ],
+    );
+    if (wide) {
+      return Scaffold(
+        backgroundColor: consolePage,
+        body: Row(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            _Sidebar(
+              section: section,
+              counts: counts,
+              onGo: _go,
+              onParts: _openParts,
+              onSignOut: _signOut,
+            ),
+            Expanded(
+              child: Align(
+                alignment: Alignment.topLeft,
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 1180),
+                  child: content,
+                ),
+              ),
+            ),
+          ],
         ),
+      );
+    }
+    return Scaffold(
+      backgroundColor: consolePage,
+      appBar: AppBar(
+        backgroundColor: consolePage,
+        title: const Text('Admin'),
+        actions: [
+          TextButton(
+            key: const Key('admin-parts'),
+            onPressed: _openParts,
+            child: const Text('Parts'),
+          ),
+          TextButton(onPressed: _signOut, child: const Text('Sign out')),
+        ],
+      ),
+      body: content,
+      bottomNavigationBar: FutureBuilder<AdminSnapshot>(
+        future: counts,
+        builder: (context, snap) {
+          final s = snap.data;
+          Widget badged(IconData icon, int n) => Badge(
+            isLabelVisible: n > 0,
+            label: Text('$n'),
+            backgroundColor: lime,
+            textColor: forest,
+            child: Icon(icon),
+          );
+          return NavigationBar(
+            selectedIndex: section.index,
+            backgroundColor: Colors.white,
+            indicatorColor: lime,
+            onDestinationSelected: (i) => _go(AdminSection.values[i]),
+            destinations: [
+              const NavigationDestination(
+                key: Key('admin-tab-overview'),
+                icon: Icon(Icons.dashboard_outlined),
+                label: 'Overview',
+              ),
+              NavigationDestination(
+                key: const Key('admin-tab-listings'),
+                icon: badged(
+                  Icons.verified_user_outlined,
+                  s?.waiting.length ?? 0,
+                ),
+                label: 'Mechanics',
+              ),
+              const NavigationDestination(
+                key: Key('admin-tab-shops'),
+                icon: Icon(Icons.storefront_outlined),
+                label: 'Shops',
+              ),
+              NavigationDestination(
+                key: const Key('admin-tab-complaints'),
+                icon: badged(
+                  Icons.flag_outlined,
+                  s?.complaints.where((c) => c.needsAdmin).length ?? 0,
+                ),
+                label: 'Complaints',
+              ),
+            ],
+          );
+        },
+      ),
+    );
+  }
+}
+
+/// The laptop sidebar: forest green, a count on each queue.
+class _Sidebar extends StatelessWidget {
+  const _Sidebar({
+    required this.section,
+    required this.counts,
+    required this.onGo,
+    required this.onParts,
+    required this.onSignOut,
+  });
+  final AdminSection section;
+  final Future<AdminSnapshot> counts;
+  final ValueChanged<AdminSection> onGo;
+  final VoidCallback onParts;
+  final VoidCallback onSignOut;
+
+  static const _soft = Color(0xFFCFDCD4);
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: 252,
+      color: forest,
+      padding: const EdgeInsets.fromLTRB(12, 20, 12, 16),
+      child: FutureBuilder<AdminSnapshot>(
+        future: counts,
+        builder: (context, snap) {
+          final s = snap.data;
+          Widget item(
+            String key,
+            IconData icon,
+            String label, {
+            AdminSection? to,
+            VoidCallback? onTap,
+            int count = 0,
+          }) {
+            final on = to != null && to == section;
+            return Padding(
+              padding: const EdgeInsets.only(bottom: 2),
+              child: Material(
+                color: on
+                    ? Colors.white.withValues(alpha: 0.1)
+                    : Colors.transparent,
+                borderRadius: BorderRadius.circular(10),
+                child: InkWell(
+                  key: Key(key),
+                  borderRadius: BorderRadius.circular(10),
+                  onTap: onTap ?? () => onGo(to!),
+                  child: SizedBox(
+                    height: 44,
+                    child: Row(
+                      children: [
+                        const SizedBox(width: 12),
+                        Icon(icon, size: 19, color: on ? Colors.white : _soft),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Text(
+                            label,
+                            style: TextStyle(
+                              fontSize: 14,
+                              fontWeight: on
+                                  ? FontWeight.w600
+                                  : FontWeight.w500,
+                              color: on ? Colors.white : _soft,
+                            ),
+                          ),
+                        ),
+                        if (count > 0)
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 7,
+                              vertical: 2,
+                            ),
+                            decoration: BoxDecoration(
+                              color: lime,
+                              borderRadius: BorderRadius.circular(99),
+                            ),
+                            child: Text(
+                              '$count',
+                              style: const TextStyle(
+                                fontSize: 12,
+                                fontWeight: FontWeight.w700,
+                                color: forest,
+                              ),
+                            ),
+                          ),
+                        const SizedBox(width: 10),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            );
+          }
+
+          Widget group(String text) => Padding(
+            padding: const EdgeInsets.fromLTRB(12, 18, 12, 6),
+            child: Text(
+              text.toUpperCase(),
+              style: const TextStyle(
+                fontSize: 11,
+                fontWeight: FontWeight.w700,
+                letterSpacing: 0.9,
+                color: Color(0xFF8FA59A),
+              ),
+            ),
+          );
+
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Padding(
+                padding: const EdgeInsets.fromLTRB(12, 0, 12, 14),
+                child: Row(
+                  children: [
+                    Text('fundi', style: heading(22, color: Colors.white)),
+                    const SizedBox(width: 10),
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 9,
+                        vertical: 3,
+                      ),
+                      decoration: BoxDecoration(
+                        color: lime.withValues(alpha: 0.16),
+                        borderRadius: BorderRadius.circular(99),
+                      ),
+                      child: const Text(
+                        'Admin',
+                        style: TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w700,
+                          color: lime,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              item(
+                'admin-tab-overview',
+                Icons.dashboard_outlined,
+                'Overview',
+                to: AdminSection.overview,
+              ),
+              group('People and businesses'),
+              item(
+                'admin-tab-listings',
+                Icons.verified_user_outlined,
+                'Mechanics & garages',
+                to: AdminSection.listings,
+                count: s?.waiting.length ?? 0,
+              ),
+              item(
+                'admin-tab-shops',
+                Icons.storefront_outlined,
+                'Parts shops',
+                to: AdminSection.shops,
+              ),
+              group('Work'),
+              item(
+                'admin-tab-complaints',
+                Icons.flag_outlined,
+                'Complaints',
+                to: AdminSection.complaints,
+                count: s?.complaints.where((c) => c.needsAdmin).length ?? 0,
+              ),
+              item(
+                'admin-parts',
+                Icons.inventory_2_outlined,
+                'Parts catalogue',
+                onTap: onParts,
+              ),
+              const Spacer(),
+              item(
+                'admin-sign-out',
+                Icons.logout,
+                'Sign out',
+                onTap: onSignOut,
+              ),
+            ],
+          );
+        },
       ),
     );
   }
@@ -68,7 +393,7 @@ class AdminScreen extends ConsumerWidget {
 
 /// Check each listing, then approve or pause it.
 class _ListingsTab extends ConsumerStatefulWidget {
-  const _ListingsTab();
+  const _ListingsTab({super.key});
 
   @override
   ConsumerState<_ListingsTab> createState() => _State();
@@ -121,88 +446,95 @@ class _State extends ConsumerState<_ListingsTab> {
 
   @override
   Widget build(BuildContext context) {
-    return ContentWidth(
-      max: 900,
-      child: Column(
-        children: [
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
-            child: FilledButton.icon(
-              key: const Key('admin-add-listing'),
-              style: FilledButton.styleFrom(
-                minimumSize: const Size.fromHeight(48),
+    return Align(
+      alignment: Alignment.topLeft,
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 900),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            _Toolbar(
+              filter: SegmentedButton<ListingStatus>(
+                segments: const [
+                  ButtonSegment(
+                    value: ListingStatus.pending,
+                    label: Text('Waiting'),
+                  ),
+                  ButtonSegment(
+                    value: ListingStatus.approved,
+                    label: Text('Live'),
+                  ),
+                  ButtonSegment(
+                    value: ListingStatus.suspended,
+                    label: Text('Paused'),
+                  ),
+                ],
+                selected: {tab},
+                onSelectionChanged: (s) {
+                  tab = s.first;
+                  _reload();
+                },
               ),
-              onPressed: _add,
-              icon: const Icon(Icons.person_add_alt_1),
-              label: const Text('Add a mechanic or garage'),
+              action: FilledButton.icon(
+                key: const Key('admin-add-listing'),
+                onPressed: _add,
+                icon: const Icon(Icons.person_add_alt_1),
+                label: const Text('Add a mechanic or garage'),
+              ),
             ),
-          ),
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 10, 16, 8),
-            child: SegmentedButton<ListingStatus>(
-              segments: const [
-                ButtonSegment(
-                  value: ListingStatus.pending,
-                  label: Text('Waiting'),
-                ),
-                ButtonSegment(
-                  value: ListingStatus.approved,
-                  label: Text('Live'),
-                ),
-                ButtonSegment(
-                  value: ListingStatus.suspended,
-                  label: Text('Paused'),
-                ),
-              ],
-              selected: {tab},
-              onSelectionChanged: (s) {
-                tab = s.first;
-                _reload();
-              },
-            ),
-          ),
-          Expanded(
-            child: FutureBuilder<List<AdminListing>>(
-              future: rows,
-              builder: (context, snap) {
-                if (snap.connectionState != ConnectionState.done) {
-                  return const Center(child: CircularProgressIndicator());
-                }
-                if (snap.hasError) {
-                  return Center(
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        const Text('Could not load applications.'),
-                        const SizedBox(height: 12),
-                        FilledButton(
-                          onPressed: _reload,
-                          child: const Text('Try again'),
-                        ),
-                      ],
-                    ),
+            Expanded(
+              child: FutureBuilder<List<AdminListing>>(
+                future: rows,
+                builder: (context, snap) {
+                  if (snap.connectionState != ConnectionState.done) {
+                    return const Center(child: CircularProgressIndicator());
+                  }
+                  if (snap.hasError) {
+                    return Center(
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const Text('Could not load applications.'),
+                          const SizedBox(height: 12),
+                          FilledButton(
+                            onPressed: _reload,
+                            child: const Text('Try again'),
+                          ),
+                        ],
+                      ),
+                    );
+                  }
+                  final list = snap.data!;
+                  if (list.isEmpty) {
+                    return switch (tab) {
+                      ListingStatus.pending => const AdminEmpty(
+                        icon: Icons.verified_user_outlined,
+                        title: 'Nobody is waiting for checks',
+                        body: 'When you add a mechanic or garage, they wait here until the ID check is done.',
+                      ),
+                      ListingStatus.approved => const AdminEmpty(
+                        icon: Icons.build_outlined,
+                        title: 'No providers are live yet',
+                        body: 'Approved mechanics and garages show here.',
+                      ),
+                      ListingStatus.suspended => const AdminEmpty(
+                        icon: Icons.pause_circle_outline,
+                        title: 'No providers are paused',
+                        body: 'Paused listings are hidden from owners.',
+                      ),
+                    };
+                  }
+                  return ListView.separated(
+                    padding: const EdgeInsets.fromLTRB(20, 4, 20, 24),
+                    itemCount: list.length,
+                    separatorBuilder: (_, _) => const SizedBox(height: 12),
+                    itemBuilder: (_, i) => _card(list[i]),
                   );
-                }
-                final list = snap.data!;
-                if (list.isEmpty) {
-                  return Center(
-                    child: Text(switch (tab) {
-                      ListingStatus.pending => 'Nobody is waiting for checks.',
-                      ListingStatus.approved => 'No providers are live yet.',
-                      ListingStatus.suspended => 'No providers are paused.',
-                    }),
-                  );
-                }
-                return ListView.separated(
-                  padding: const EdgeInsets.fromLTRB(16, 4, 16, 24),
-                  itemCount: list.length,
-                  separatorBuilder: (_, _) => const SizedBox(height: 12),
-                  itemBuilder: (_, i) => _card(list[i]),
-                );
-              },
+                },
+              ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
@@ -261,13 +593,35 @@ class _State extends ConsumerState<_ListingsTab> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(
-              l.name,
-              style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w700),
-            ),
-            Text(
-              '${l.type.name == 'garage' ? 'Garage' : 'Mobile mechanic'} · ${l.area} · ${l.phone}',
-              style: TextStyle(color: grey, fontSize: 13),
+            Row(
+              children: [
+                AdminAvatar(l.name),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        l.name,
+                        style: const TextStyle(
+                          fontSize: 17,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                      Text(
+                        '${l.type.name == 'garage' ? 'Garage' : 'Mobile mechanic'} · ${l.area} · ${l.phone}',
+                        style: TextStyle(color: grey, fontSize: 13),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(width: 8),
+                AdminPill(
+                  '${l.applicableChecks.where(l.checksPassed.contains).length} of ${l.applicableChecks.length} checks',
+                  fill: l.canApprove ? const Color(0xFFDCEFE2) : warnFill,
+                  ink: l.canApprove ? const Color(0xFF135C37) : warnInk,
+                ),
+              ],
             ),
             const SizedBox(height: 10),
             const Text(
@@ -374,7 +728,7 @@ class _State extends ConsumerState<_ListingsTab> {
 // Parts shops
 // ---------------------------------------------------------------------------
 class _ShopsTab extends ConsumerStatefulWidget {
-  const _ShopsTab();
+  const _ShopsTab({super.key});
 
   @override
   ConsumerState<_ShopsTab> createState() => _ShopsState();
@@ -408,104 +762,110 @@ class _ShopsState extends ConsumerState<_ShopsTab> {
 
   @override
   Widget build(BuildContext context) {
-    return ContentWidth(
-      max: 900,
-      child: Column(
-        children: [
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
-            child: FilledButton.icon(
-              key: const Key('admin-add-shop'),
-              style: FilledButton.styleFrom(
-                minimumSize: const Size.fromHeight(48),
+    return Align(
+      alignment: Alignment.topLeft,
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 900),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            _Toolbar(
+              action: FilledButton.icon(
+                key: const Key('admin-add-shop'),
+                onPressed: _add,
+                icon: const Icon(Icons.add_business_outlined),
+                label: const Text('Add a parts shop'),
               ),
-              onPressed: _add,
-              icon: const Icon(Icons.add_business_outlined),
-              label: const Text('Add a parts shop'),
             ),
-          ),
-          Expanded(
-            child: FutureBuilder<List<PartsShop>>(
-              future: rows,
-              builder: (context, snap) {
-                if (snap.connectionState != ConnectionState.done) {
-                  return const Center(child: CircularProgressIndicator());
-                }
-                if (snap.hasError) {
-                  return Center(
-                    child: FilledButton(
-                      onPressed: _reload,
-                      child: const Text('Try again'),
-                    ),
-                  );
-                }
-                final list = snap.data!;
-                if (list.isEmpty) {
-                  return const Center(child: Text('No parts shops yet.'));
-                }
-                return ListView.separated(
-                  padding: const EdgeInsets.fromLTRB(16, 4, 16, 24),
-                  itemCount: list.length,
-                  separatorBuilder: (_, _) => const SizedBox(height: 12),
-                  itemBuilder: (_, i) {
-                    final s = list[i];
-                    return Card(
-                      child: Padding(
-                        padding: const EdgeInsets.all(16),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              s.name,
-                              style: const TextStyle(
-                                fontSize: 17,
-                                fontWeight: FontWeight.w700,
-                              ),
-                            ),
-                            Text(
-                              '${s.area} · ${s.phone} · ${s.active ? 'Open to garages and mechanics' : 'Paused'}',
-                              style: const TextStyle(
-                                fontSize: 13,
-                                color: muted,
-                              ),
-                            ),
-                            const SizedBox(height: 6),
-                            Wrap(
-                              spacing: 8,
-                              children: [
-                                TextButton.icon(
-                                  key: Key('people-${s.id}'),
-                                  onPressed: () => Navigator.of(context).push(
-                                    MaterialPageRoute<void>(
-                                      builder: (_) => MembersScreen(
-                                        kind: OrgKind.shop,
-                                        orgId: s.id,
-                                        orgName: s.name,
-                                      ),
-                                    ),
-                                  ),
-                                  icon: const Icon(Icons.group_outlined),
-                                  label: const Text('People'),
-                                ),
-                                TextButton(
-                                  key: Key('shop-toggle-${s.id}'),
-                                  onPressed: () => _toggle(s),
-                                  child: Text(
-                                    s.active ? 'Pause shop' : 'Open shop again',
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ],
-                        ),
+            Expanded(
+              child: FutureBuilder<List<PartsShop>>(
+                future: rows,
+                builder: (context, snap) {
+                  if (snap.connectionState != ConnectionState.done) {
+                    return const Center(child: CircularProgressIndicator());
+                  }
+                  if (snap.hasError) {
+                    return Center(
+                      child: FilledButton(
+                        onPressed: _reload,
+                        child: const Text('Try again'),
                       ),
                     );
-                  },
-                );
-              },
+                  }
+                  final list = snap.data!;
+                  if (list.isEmpty) {
+                    return const AdminEmpty(
+                      icon: Icons.storefront_outlined,
+                      title: 'No parts shops yet',
+                      body: "Visit the shop, check the owner's ID and permit, then add it. Garages and mechanics see its parts at once.",
+                    );
+                  }
+                  return ListView.separated(
+                    padding: const EdgeInsets.fromLTRB(16, 4, 16, 24),
+                    itemCount: list.length,
+                    separatorBuilder: (_, _) => const SizedBox(height: 12),
+                    itemBuilder: (_, i) {
+                      final s = list[i];
+                      return Card(
+                        child: Padding(
+                          padding: const EdgeInsets.all(16),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                s.name,
+                                style: const TextStyle(
+                                  fontSize: 17,
+                                  fontWeight: FontWeight.w700,
+                                ),
+                              ),
+                              Text(
+                                '${s.area} · ${s.phone} · ${s.active ? 'Open to garages and mechanics' : 'Paused'}',
+                                style: const TextStyle(
+                                  fontSize: 13,
+                                  color: muted,
+                                ),
+                              ),
+                              const SizedBox(height: 6),
+                              Wrap(
+                                spacing: 8,
+                                children: [
+                                  TextButton.icon(
+                                    key: Key('people-${s.id}'),
+                                    onPressed: () => Navigator.of(context).push(
+                                      MaterialPageRoute<void>(
+                                        builder: (_) => MembersScreen(
+                                          kind: OrgKind.shop,
+                                          orgId: s.id,
+                                          orgName: s.name,
+                                        ),
+                                      ),
+                                    ),
+                                    icon: const Icon(Icons.group_outlined),
+                                    label: const Text('People'),
+                                  ),
+                                  TextButton(
+                                    key: Key('shop-toggle-${s.id}'),
+                                    onPressed: () => _toggle(s),
+                                    child: Text(
+                                      s.active
+                                          ? 'Pause shop'
+                                          : 'Open shop again',
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ],
+                          ),
+                        ),
+                      );
+                    },
+                  );
+                },
+              ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
@@ -1153,7 +1513,7 @@ class _MembersState extends ConsumerState<MembersScreen> {
 /// refund if upheld (capped at the job cost by the server), and record the
 /// M-Pesa code once the refund is sent.
 class _ComplaintsTab extends ConsumerStatefulWidget {
-  const _ComplaintsTab();
+  const _ComplaintsTab({super.key});
 
   @override
   ConsumerState<_ComplaintsTab> createState() => _ComplaintsState();
@@ -1189,7 +1549,11 @@ class _ComplaintsState extends ConsumerState<_ComplaintsTab> {
           }
           final list = snap.data!;
           if (list.isEmpty) {
-            return const Center(child: Text('No complaints.'));
+            return const AdminEmpty(
+              icon: Icons.flag_outlined,
+              title: 'No complaints',
+              body: "When an owner reports a problem with a job, it shows here with the mechanic's answer.",
+            );
           }
           return ListView(
             padding: const EdgeInsets.all(16),
@@ -1385,4 +1749,131 @@ class _ComplaintCardState extends ConsumerState<_ComplaintCard> {
       ),
     );
   }
+}
+
+// ---------------------------------------------------------------------------
+// Small pieces shared by the admin sections
+// ---------------------------------------------------------------------------
+
+/// A filter on the left and the section's main action on the right; they
+/// stack on a phone.
+class _Toolbar extends StatelessWidget {
+  const _Toolbar({this.filter, required this.action});
+  final Widget? filter;
+  final Widget action;
+
+  @override
+  Widget build(BuildContext context) => Padding(
+    padding: const EdgeInsets.fromLTRB(20, 0, 20, 14),
+    child: Wrap(
+      spacing: 12,
+      runSpacing: 10,
+      alignment: WrapAlignment.spaceBetween,
+      crossAxisAlignment: WrapCrossAlignment.center,
+      children: [?filter, action],
+    ),
+  );
+}
+
+/// Initials in a forest circle.
+class AdminAvatar extends StatelessWidget {
+  const AdminAvatar(this.name, {super.key, this.size = 40});
+  final String name;
+  final double size;
+
+  @override
+  Widget build(BuildContext context) {
+    final words = name.split(RegExp(r'\s+')).where((w) => w.isNotEmpty);
+    final initials = words.take(2).map((w) => w[0].toUpperCase()).join();
+    return Container(
+      width: size,
+      height: size,
+      alignment: Alignment.center,
+      decoration: const BoxDecoration(color: forest, shape: BoxShape.circle),
+      child: Text(
+        initials,
+        style: TextStyle(
+          color: lime,
+          fontWeight: FontWeight.w800,
+          fontSize: size * 0.36,
+        ),
+      ),
+    );
+  }
+}
+
+/// A status in words on a soft colour.
+class AdminPill extends StatelessWidget {
+  const AdminPill(
+    this.text, {
+    super.key,
+    required this.fill,
+    required this.ink,
+  });
+  final String text;
+  final Color fill;
+  final Color ink;
+
+  @override
+  Widget build(BuildContext context) => Container(
+    padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
+    decoration: BoxDecoration(
+      color: fill,
+      borderRadius: BorderRadius.circular(99),
+    ),
+    child: Text(
+      text,
+      style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: ink),
+    ),
+  );
+}
+
+/// An empty list that says what will appear there, not just "nothing".
+class AdminEmpty extends StatelessWidget {
+  const AdminEmpty({
+    super.key,
+    required this.icon,
+    required this.title,
+    required this.body,
+  });
+  final IconData icon;
+  final String title;
+  final String body;
+
+  @override
+  Widget build(BuildContext context) => Align(
+    alignment: const Alignment(0, -0.4),
+    child: Padding(
+      padding: const EdgeInsets.all(24),
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 360),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              width: 56,
+              height: 56,
+              decoration: BoxDecoration(
+                color: tint,
+                borderRadius: BorderRadius.circular(16),
+              ),
+              child: Icon(icon, color: forest),
+            ),
+            const SizedBox(height: 14),
+            Text(
+              title,
+              textAlign: TextAlign.center,
+              style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
+            ),
+            const SizedBox(height: 4),
+            Text(
+              body,
+              textAlign: TextAlign.center,
+              style: const TextStyle(color: muted, height: 1.4),
+            ),
+          ],
+        ),
+      ),
+    ),
+  );
 }
