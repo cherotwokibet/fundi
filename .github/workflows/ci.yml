@@ -1,0 +1,53 @@
+# Runs on every push and pull request. Two checks:
+#   app       flutter analyze + flutter test (sample data, no backend)
+#   database  every migration and every access-rule test on Postgres + PostGIS
+# No secrets are needed: nothing here talks to the live Supabase project.
+name: CI
+
+on:
+  push:
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  app:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+      - run: flutter --version
+      - run: flutter pub get
+      # Deprecation notices from newer Flutter versions are shown, not fatal.
+      - run: flutter analyze --no-fatal-infos
+      - run: flutter test
+
+  database:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    services:
+      postgres:
+        image: postgis/postgis:16-3.4
+        env:
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      PGHOST: localhost
+      PGUSER: postgres
+      PGPASSWORD: postgres
+    steps:
+      - uses: actions/checkout@v4
+      - run: psql --version
+      - run: bash supabase/tests/run.sh

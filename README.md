@@ -168,3 +168,10 @@ lib/ui/          screens and widgets
 supabase/        migrations, seed SQL, and SQL rule tests
 test/            ranking, owner, mechanic, inbox, admin, parts and layout tests
 ```
+
+## Checks on GitHub
+
+`.github/workflows/ci.yml` runs on every push and pull request: `flutter analyze` and
+`flutter test` (sample data), and every migration plus every access-rule test on
+Postgres with PostGIS (`supabase/tests/run.sh`). It needs no secrets and never touches
+the live Supabase project.
