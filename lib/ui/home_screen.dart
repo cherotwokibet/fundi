@@ -10,6 +10,7 @@ import 'request_status_screen.dart';
 import 'safety_sheet.dart';
 import 'theme.dart';
 import 'widgets.dart';
+import 'rate_card.dart';
 
 /// The whole product on one screen: two actions, no login, no categories.
 /// Phone: one column, with the main button low, in thumb reach.
@@ -84,7 +85,9 @@ class HomeScreen extends ConsumerWidget {
                     children: [
                       header,
                       if (sample) ...[const SizedBox(height: 4), banner],
-                      const SizedBox(height: 16),
+                      const SizedBox(height: 8),
+                      const RateCard(),
+                      const SizedBox(height: 8),
                       ConstrainedBox(
                         // Tall enough to feel like a page, short enough that
                         // everything fits a laptop window without scrolling.
@@ -150,6 +153,7 @@ class HomeScreen extends ConsumerWidget {
                           header,
                           if (sample) ...[const SizedBox(height: 4), banner],
                           const SizedBox(height: 8),
+                          const RateCard(),
                           Expanded(child: hero),
                           const SizedBox(height: 10),
                           browse,

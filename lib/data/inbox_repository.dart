@@ -4,7 +4,7 @@ import '../models/quote.dart';
 import '../models/service_provider.dart';
 import 'account_repository.dart';
 
-enum RequestStatus { requested, accepted, other }
+enum RequestStatus { requested, accepted, done, other }
 
 /// A "Find me a mechanic" request as the mechanic sees it.
 class IncomingRequest {
@@ -44,6 +44,7 @@ class IncomingRequest {
     status: switch (r['status']) {
       'requested' => RequestStatus.requested,
       'accepted' => RequestStatus.accepted,
+      'done' => RequestStatus.done,
       _ => RequestStatus.other,
     },
     area: r['area'] as String?,
@@ -77,6 +78,9 @@ abstract class InboxRepository {
 
   /// The latest quote on a request (not counting replaced ones), or null.
   Future<Quote?> latestQuote(String requestId);
+
+  /// The mechanic says the work on a job they took is done.
+  Future<void> markDone(String requestId);
 }
 
 class SupabaseInboxRepository implements InboxRepository {
@@ -122,6 +126,15 @@ class SupabaseInboxRepository implements InboxRepository {
           'p_note': note,
         },
       );
+    } on PostgrestException catch (e) {
+      throw AccountException(e.message);
+    }
+  }
+
+  @override
+  Future<void> markDone(String requestId) async {
+    try {
+      await _client.rpc('mark_job_done', params: {'p_request': requestId});
     } on PostgrestException catch (e) {
       throw AccountException(e.message);
     }
@@ -232,4 +245,28 @@ class SampleInboxRepository implements InboxRepository {
 
   @override
   Future<Quote?> latestQuote(String requestId) async => quotes[requestId];
+
+  @override
+  Future<void> markDone(String requestId) async {
+    final i = _requests.indexWhere(
+      (r) => r.id == requestId && r.status == RequestStatus.accepted,
+    );
+    if (i < 0) {
+      throw AccountException('Only a job you took can be marked done');
+    }
+    final r = _requests[i];
+    _requests[i] = IncomingRequest(
+      id: r.id,
+      mode: r.mode,
+      createdAt: r.createdAt,
+      status: RequestStatus.done,
+      area: r.area,
+      note: r.note,
+      carMake: r.carMake,
+      contactPhone: r.contactPhone,
+      photoPath: r.photoPath,
+      voicePath: r.voicePath,
+      distanceKm: r.distanceKm,
+    );
+  }
 }

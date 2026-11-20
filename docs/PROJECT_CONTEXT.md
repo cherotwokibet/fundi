@@ -46,7 +46,13 @@ Phase 2 started: **itemised quotes** (`20261121000000_quotes.sql`, own SQL test)
 they took, the mechanic sends lines of labour, parts and other costs; the owner sees them on
 My repair and taps Approve or Decline, no sign-up. A new quote replaces one not yet answered;
 extra work after approval is a new quote. The mechanic gets a text when the owner answers.
-**Quotes migration not yet applied live.** 48 Flutter tests, nine SQL test files.
+Quotes migration applied live (20 Nov).
+
+**Job done and reviews** (`20261121010000_job_done_reviews.sql`, own SQL test): the mechanic
+taps "Job done" (or the owner taps "The work is done"); the owner's home screen then asks
+"How did they do?" — one tap on 1–5 stars, optional comment, skippable. One rating per job,
+within 14 days; the listing's rating is worked out only from these. **Not yet applied live.**
+51 Flutter tests, ten SQL test files.
 
 ## State of the build (19 Nov 2026, night)
 
@@ -118,7 +124,7 @@ owner's call.
 **Parts marketplace gaps:** no in-app payment or delivery. SMS alerts are queued but nothing
 sends them until a real SMS provider is connected (an Edge Function reading `sms_outbox`).
 
-**Next build items:** apply the quotes migration live, connect an SMS provider for sign-in codes and alerts, and onboard the first real
+**Next build items:** apply the job-done/reviews migration live, M-Pesa payments (needs IntaSend sandbox keys), connect an SMS provider for sign-in codes and alerts, and onboard the first real
 garage and parts shop through the admin console; test the owner flow with five car owners on their own phones; then
 Phase 2, starting with owner phone sign-in and quotes.
 

@@ -18,6 +18,7 @@ import 'package:fundi/models/quote.dart';
 import 'package:fundi/models/service_provider.dart';
 import 'package:fundi/models/trade.dart';
 import 'package:fundi/state/app_state.dart';
+import 'package:fundi/ui/home_screen.dart';
 import 'package:fundi/ui/request_status_screen.dart';
 import 'package:fundi/ui/shop_screen.dart';
 
@@ -250,6 +251,59 @@ void main() {
         (await repo.latestQuote((await repo.myOpenRequest())!.id))!.status,
         QuoteStatus.approved,
       );
+    });
+
+    testWidgets('job done: the owner rates the mechanic from the home screen', (
+      tester,
+    ) async {
+      await pumpApp(tester);
+      expect(find.byKey(const Key('rate-card')), findsNothing);
+      await findMatch(tester);
+      await tester.tap(find.byKey(const Key('request-mechanic')));
+      await tester.pumpAndSettle();
+      repo.mechanicAccepts();
+      await tester.pump(RequestStatusScreen.checkEvery);
+      await tester.pumpAndSettle();
+
+      await tester.ensureVisible(find.byKey(const Key('status-done')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('status-done')));
+      await tester.pumpAndSettle();
+      // Back home, asked once, gently.
+      expect(find.text('How did Otieno Mobile Mechanic do?'), findsOneWidget);
+      await tester.tap(find.byKey(const Key('star-4')));
+      await tester.pumpAndSettle();
+      await tester.enterText(
+        find.byKey(const Key('rate-comment')),
+        'Came quickly',
+      );
+      await tester.tap(find.byKey(const Key('rate-send')));
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('rate-thanks')), findsOneWidget);
+      expect(repo.finished!.stars, 4);
+      expect(repo.finished!.comment, 'Came quickly');
+    });
+
+    testWidgets('rating can be skipped and never blocks the home screen', (
+      tester,
+    ) async {
+      await pumpApp(tester);
+      await findMatch(tester);
+      await tester.tap(find.byKey(const Key('request-mechanic')));
+      await tester.pumpAndSettle();
+      repo.mechanicAccepts();
+      repo.mechanicMarksDone();
+      await tester.pageBack();
+      await tester.pumpAndSettle();
+      ProviderScope.containerOf(tester.element(find.byType(HomeScreen)))
+          .read(requestVersionProvider.notifier)
+          .bump();
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('rate-card')), findsOneWidget);
+      await tester.tap(find.byKey(const Key('rate-skip')));
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('rate-card')), findsNothing);
+      expect(find.text('Find me a mechanic'), findsOneWidget);
     });
 
     testWidgets('find me: a photo and a voice note travel with the request', (
@@ -1125,6 +1179,24 @@ void main() {
         QuoteLineKind.labour,
         QuoteLineKind.part,
       ]);
+    });
+
+    testWidgets('a mechanic marks a job they took as done', (tester) async {
+      await pumpApproved(tester);
+      await tester.tap(find.byKey(const Key('open-inbox')));
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('job-done-r1')), findsNothing);
+      await tester.tap(find.byKey(const Key('accept-r1')));
+      await tester.pumpAndSettle();
+      await tester.pump(const Duration(seconds: 5));
+      await tester.pumpAndSettle();
+      await tester.ensureVisible(find.byKey(const Key('job-done-r1')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('job-done-r1')));
+      await tester.pumpAndSettle();
+      expect(find.text('Done'), findsOneWidget);
+      expect(find.byKey(const Key('job-done-r1')), findsNothing);
+      expect(find.byKey(const Key('send-quote-r1')), findsNothing);
     });
 
     testWidgets('take one request and pass on another', (tester) async {

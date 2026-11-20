@@ -239,3 +239,9 @@ final quoteProvider = FutureProvider.family<Quote?, String>(
 final inboxQuoteProvider = FutureProvider.family<Quote?, String>(
   (ref, requestId) => ref.watch(inboxRepositoryProvider).latestQuote(requestId),
 );
+
+/// A finished job the owner has not rated yet, for the home screen.
+final reviewDueProvider = FutureProvider<ReviewDue?>((ref) {
+  ref.watch(requestVersionProvider);
+  return ref.watch(repositoryProvider).reviewDue();
+});

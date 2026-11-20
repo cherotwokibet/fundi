@@ -11,6 +11,9 @@ typedef Attachment = ({Uint8List bytes, String mime});
 
 enum ContactKind { profileView, callTap, callHelped, callNotHelped }
 
+/// A finished job the owner can still rate.
+typedef ReviewDue = ({String requestId, String providerName});
+
 /// The request was refused by a limit (too many open, too many today, or the
 /// mechanic has too many waiting). [message] says what the owner can do.
 class RequestLimitException implements Exception {
@@ -56,6 +59,15 @@ abstract class ProviderRepository {
 
   /// The owner approves or declines the quote waiting for them.
   Future<void> respondToQuote(String quoteId, {required bool approve});
+
+  /// The owner says the work on their accepted request is done.
+  Future<void> markJobDone(String requestId);
+
+  /// The owner's latest finished job not yet rated, or null.
+  Future<ReviewDue?> reviewDue();
+
+  /// The owner rates a finished job, 1 to 5 stars, once.
+  Future<void> leaveReview(String requestId, int stars, {String? comment});
 
   /// The owner cancels their own request.
   Future<void> cancelRequest(String requestId);
@@ -193,6 +205,32 @@ class SupabaseProviderRepository implements ProviderRepository {
         'respond_to_quote',
         params: {'p_quote': quoteId, 'p_approve': approve},
       );
+
+  @override
+  Future<void> markJobDone(String requestId) =>
+      _client.rpc('mark_job_done', params: {'p_request': requestId});
+
+  @override
+  Future<ReviewDue?> reviewDue() async {
+    final rows = await _client.rpc('my_review_due') as List;
+    if (rows.isEmpty) return null;
+    final r = rows.first as Map<String, dynamic>;
+    return (
+      requestId: r['request_id'] as String,
+      providerName: r['provider_name'] as String,
+    );
+  }
+
+  @override
+  Future<void> leaveReview(String requestId, int stars, {String? comment}) =>
+      _client.rpc(
+        'leave_review',
+        params: {
+          'p_request': requestId,
+          'p_stars': stars,
+          'p_comment': comment,
+        },
+      );
 }
 
 /// Built-in sample data, used until Supabase keys are supplied.
@@ -275,6 +313,54 @@ class SampleProviderRepository implements ProviderRepository {
     }
     _quote = q.withStatus(
       approve ? QuoteStatus.approved : QuoteStatus.declined,
+    );
+  }
+
+  /// The last finished job, and the stars given to it (null until rated).
+  ({String requestId, String providerName, int? stars, String? comment})?
+  finished;
+
+  @override
+  Future<void> markJobDone(String requestId) async {
+    final r = _open;
+    if (r == null || r.id != requestId || !r.accepted) {
+      throw StateError('Only an accepted job can be marked done');
+    }
+    finished = (
+      requestId: r.id,
+      providerName: r.providerName ?? 'The mechanic',
+      stars: null,
+      comment: null,
+    );
+    _open = null;
+  }
+
+  /// Test hook: the mechanic marks the accepted job done.
+  void mechanicMarksDone() => markJobDone(_open!.id);
+
+  @override
+  Future<ReviewDue?> reviewDue() async {
+    final f = finished;
+    if (f == null || f.stars != null) return null;
+    return (requestId: f.requestId, providerName: f.providerName);
+  }
+
+  @override
+  Future<void> leaveReview(
+    String requestId,
+    int stars, {
+    String? comment,
+  }) async {
+    final f = finished;
+    if (f == null || f.requestId != requestId || f.stars != null) {
+      throw StateError('Nothing to rate');
+    }
+    if (stars < 1 || stars > 5) throw StateError('Pick from 1 to 5 stars');
+    finished = (
+      requestId: f.requestId,
+      providerName: f.providerName,
+      stars: stars,
+      comment: comment,
     );
   }
 

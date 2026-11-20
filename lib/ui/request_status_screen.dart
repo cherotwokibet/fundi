@@ -102,6 +102,22 @@ class _State extends ConsumerState<RequestStatusScreen> {
       Navigator.of(context)
           .push(MaterialPageRoute<void>(builder: (_) => const BrowseScreen()));
 
+  Future<void> _done(OwnerRequest r) async {
+    final navigator = Navigator.of(context);
+    setState(() => cancelling = true);
+    try {
+      await ref.read(repositoryProvider).markJobDone(r.id);
+      ref.read(requestVersionProvider.notifier).bump();
+      navigator.popUntil((route) => route.isFirst);
+    } catch (_) {
+      if (mounted) {
+        _say('Could not save that. Check your connection and try again.');
+      }
+    } finally {
+      if (mounted) setState(() => cancelling = false);
+    }
+  }
+
   Future<void> _cancel(OwnerRequest r) async {
     final navigator = Navigator.of(context);
     setState(() => cancelling = true);
@@ -201,6 +217,11 @@ class _State extends ConsumerState<RequestStatusScreen> {
             label: 'Call $name',
             icon: Icons.call,
             onPressed: () => _call(r),
+          ),
+          TextButton(
+            key: const Key('status-done'),
+            onPressed: cancelling ? null : () => _done(r),
+            child: const Text('The work is done'),
           ),
           cancel,
         ],

@@ -141,6 +141,9 @@ Never put the `service_role` key in the app.
 - Quotes: on a job they took, the mechanic sends lines of labour, parts and other
   costs; the owner sees them on My repair and taps Approve or Decline. A new quote
   replaces one not yet answered. The mechanic gets a text when the owner answers.
+- Job done and reviews: the mechanic (or owner) marks the job done; the owner's
+  home screen asks "How did they do?" (1–5 stars, optional comment, skippable).
+  One rating per finished job within 14 days; listing ratings come only from these.
 - Text alerts: a mechanic getting a request, a shop getting an order, and a
   buyer whose order is confirmed, ready or cancelled get a text. Texts queue in
   `sms_outbox`; nothing sends them until an SMS provider is connected. Testers
@@ -158,7 +161,7 @@ supabase/tests/run.sh
 
 ## Not built yet
 
-- Phone sign-in for owners, M-Pesa payments, reviews (Phase 2)
+- Phone sign-in for owners, M-Pesa payments, complaints (Phase 2)
 - Paying for parts in the app, delivery, push or SMS alerts for new orders
 
 ## Layout

@@ -186,6 +186,23 @@ class _RequestCardState extends ConsumerState<_RequestCard> {
     }
   }
 
+  Future<void> _markDone() async {
+    setState(() => busy = true);
+    try {
+      await ref.read(inboxRepositoryProvider).markDone(r.id);
+      ref.invalidate(inboxProvider);
+      _say('Marked done. The owner can now rate the job.');
+    } catch (e) {
+      _say(
+        e is AccountException
+            ? e.message
+            : 'Something went wrong. Check your connection and try again.',
+      );
+    } finally {
+      if (mounted) setState(() => busy = false);
+    }
+  }
+
   Future<void> _respond(bool accept) async {
     setState(() => busy = true);
     try {
@@ -248,6 +265,11 @@ class _RequestCardState extends ConsumerState<_RequestCard> {
                     label: Text('You took this'),
                     visualDensity: VisualDensity.compact,
                   ),
+                if (r.status == RequestStatus.done)
+                  const Chip(
+                    label: Text('Done'),
+                    visualDensity: VisualDensity.compact,
+                  ),
               ],
             ),
             const SizedBox(height: 4),
@@ -308,7 +330,14 @@ class _RequestCardState extends ConsumerState<_RequestCard> {
                   style: TextStyle(fontSize: 13),
                 ),
               ),
-            if (r.status == RequestStatus.accepted) _QuoteSection(r.id),
+            if (r.status == RequestStatus.accepted) ...[
+              _QuoteSection(r.id),
+              TextButton(
+                key: Key('job-done-${r.id}'),
+                onPressed: busy ? null : _markDone,
+                child: const Text('Job done'),
+              ),
+            ],
             if (r.waiting) ...[
               FilledButton(
                 key: Key('accept-${r.id}'),
