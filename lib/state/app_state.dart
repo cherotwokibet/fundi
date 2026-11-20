@@ -15,6 +15,7 @@ import '../data/provider_repository.dart';
 import '../data/voice_player.dart';
 import '../data/voice_recorder.dart';
 import '../data/zones.dart';
+import '../models/quote.dart';
 import '../models/service_provider.dart';
 import '../models/trade.dart';
 
@@ -228,3 +229,13 @@ List<ServiceProvider> bestMatches(
   }).toList()..sort(compareProviders);
   return fits.take(limit).toList();
 }
+
+/// The latest quote on the owner's request (My repair).
+final quoteProvider = FutureProvider.family<Quote?, String>(
+  (ref, requestId) => ref.watch(repositoryProvider).latestQuote(requestId),
+);
+
+/// The latest quote on a job in the mechanic's inbox.
+final inboxQuoteProvider = FutureProvider.family<Quote?, String>(
+  (ref, requestId) => ref.watch(inboxRepositoryProvider).latestQuote(requestId),
+);

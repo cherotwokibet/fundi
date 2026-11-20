@@ -2,6 +2,7 @@ import 'dart:typed_data';
 
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+import '../models/quote.dart';
 import '../models/service_provider.dart';
 import 'zones.dart';
 
@@ -49,6 +50,12 @@ abstract class ProviderRepository {
   /// After 5 minutes with no answer, asks for the request to go to the next
   /// free mechanic. True when it moved. The server checks the 5 minutes.
   Future<bool> nudgeRequest(String requestId);
+
+  /// The mechanic's latest quote on this request, or null.
+  Future<Quote?> latestQuote(String requestId);
+
+  /// The owner approves or declines the quote waiting for them.
+  Future<void> respondToQuote(String quoteId, {required bool approve});
 
   /// The owner cancels their own request.
   Future<void> cancelRequest(String requestId);
@@ -166,6 +173,26 @@ class SupabaseProviderRepository implements ProviderRepository {
   Future<bool> nudgeRequest(String requestId) async =>
       await _client.rpc('nudge_my_request', params: {'p_request': requestId})
           as bool;
+
+  @override
+  Future<Quote?> latestQuote(String requestId) async {
+    final row = await _client
+        .from('quotes')
+        .select(Quote.columns)
+        .eq('request_id', requestId)
+        .neq('status', 'withdrawn')
+        .order('created_at', ascending: false)
+        .limit(1)
+        .maybeSingle();
+    return row == null ? null : Quote.fromRow(row);
+  }
+
+  @override
+  Future<void> respondToQuote(String quoteId, {required bool approve}) =>
+      _client.rpc(
+        'respond_to_quote',
+        params: {'p_quote': quoteId, 'p_approve': approve},
+      );
 }
 
 /// Built-in sample data, used until Supabase keys are supplied.
@@ -221,6 +248,34 @@ class SampleProviderRepository implements ProviderRepository {
   void ageRequest(Duration by) {
     final r = _open!;
     _open = _with(r, assignedAt: r.waitingSince.subtract(by));
+  }
+
+  Quote? _quote;
+  int _quoteSeq = 0;
+
+  /// Test hook: the mechanic sends a quote on the accepted request.
+  void mechanicSendsQuote(List<QuoteLine> lines, {String? note}) {
+    _quote = Quote.draft(
+      id: 'q${++_quoteSeq}',
+      requestId: _open!.id,
+      lines: lines,
+      note: note,
+    );
+  }
+
+  @override
+  Future<Quote?> latestQuote(String requestId) async =>
+      _quote?.requestId == requestId ? _quote : null;
+
+  @override
+  Future<void> respondToQuote(String quoteId, {required bool approve}) async {
+    final q = _quote;
+    if (q == null || q.id != quoteId || !q.waiting) {
+      throw StateError('This quote was already answered or replaced');
+    }
+    _quote = q.withStatus(
+      approve ? QuoteStatus.approved : QuoteStatus.declined,
+    );
   }
 
   /// Requests sent in sample mode, for the daily limit.

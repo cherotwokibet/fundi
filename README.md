@@ -138,6 +138,9 @@ Never put the `service_role` key in the app.
   answer, the waiting screen has the request sent on the same way.
 - Limits: at most 2 open requests and 6 a day per account; a mechanic with 5
   waiting requests gets no more. The owner is told plainly and can still call.
+- Quotes: on a job they took, the mechanic sends lines of labour, parts and other
+  costs; the owner sees them on My repair and taps Approve or Decline. A new quote
+  replaces one not yet answered. The mechanic gets a text when the owner answers.
 - Text alerts: a mechanic getting a request, a shop getting an order, and a
   buyer whose order is confirmed, ready or cancelled get a text. Texts queue in
   `sms_outbox`; nothing sends them until an SMS provider is connected. Testers
@@ -155,7 +158,7 @@ supabase/tests/run.sh
 
 ## Not built yet
 
-- Phone sign-in for owners, quotes, M-Pesa payments, reviews (Phase 2)
+- Phone sign-in for owners, M-Pesa payments, reviews (Phase 2)
 - Paying for parts in the app, delivery, push or SMS alerts for new orders
 
 ## Layout

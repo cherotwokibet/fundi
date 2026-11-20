@@ -14,6 +14,7 @@ import 'package:fundi/data/voice_player.dart';
 import 'package:fundi/data/voice_recorder.dart';
 import 'package:fundi/data/zones.dart';
 import 'package:fundi/main.dart';
+import 'package:fundi/models/quote.dart';
 import 'package:fundi/models/service_provider.dart';
 import 'package:fundi/models/trade.dart';
 import 'package:fundi/state/app_state.dart';
@@ -205,6 +206,50 @@ void main() {
       await tester.tap(find.byKey(const Key('status-call')));
       await tester.pump();
       expect(dialed, ['+254700000001']);
+    });
+
+    testWidgets('quote: the owner sees the lines and approves with one tap', (
+      tester,
+    ) async {
+      await pumpApp(tester);
+      await findMatch(tester);
+      await tester.tap(find.byKey(const Key('request-mechanic')));
+      await tester.pumpAndSettle();
+      repo.mechanicAccepts();
+      await tester.pump(RequestStatusScreen.checkEvery);
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('owner-quote')), findsNothing);
+
+      repo.mechanicSendsQuote(const [
+        QuoteLine(
+          kind: QuoteLineKind.labour,
+          description: 'Replace front brake pads',
+          unitPriceKes: 1200,
+        ),
+        QuoteLine(
+          kind: QuoteLineKind.part,
+          description: 'Front brake pads',
+          qty: 2,
+          unitPriceKes: 1700,
+        ),
+      ], note: 'Pads are worn to the metal');
+      await tester.pump(RequestStatusScreen.checkEvery);
+      await tester.pumpAndSettle();
+      expect(find.text('Quote from Otieno Mobile Mechanic'), findsOneWidget);
+      expect(find.text('KES 4,600'), findsOneWidget);
+      expect(find.textContaining('2 × Front brake pads'), findsOneWidget);
+      expect(find.text('"Pads are worn to the metal"'), findsOneWidget);
+
+      await tester.ensureVisible(find.byKey(const Key('quote-approve')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('quote-approve')));
+      await tester.pumpAndSettle();
+      expect(find.text('You approved this quote'), findsOneWidget);
+      expect(find.byKey(const Key('quote-approve')), findsNothing);
+      expect(
+        (await repo.latestQuote((await repo.myOpenRequest())!.id))!.status,
+        QuoteStatus.approved,
+      );
     });
 
     testWidgets('find me: a photo and a voice note travel with the request', (
@@ -1013,6 +1058,73 @@ void main() {
       await tester.tap(find.byKey(const Key('voice-r1')));
       await tester.pumpAndSettle();
       expect(player.played, ['https://files.test/sample/voice']);
+    });
+
+    testWidgets('a mechanic sends a quote on a job they took', (tester) async {
+      await pumpApproved(tester);
+      await tester.tap(find.byKey(const Key('open-inbox')));
+      await tester.pumpAndSettle();
+      // No quote before taking the job.
+      expect(find.byKey(const Key('send-quote-r1')), findsNothing);
+      await tester.tap(find.byKey(const Key('accept-r1')));
+      await tester.pumpAndSettle();
+      await tester.pump(const Duration(seconds: 5));
+      await tester.pumpAndSettle();
+
+      await tester.ensureVisible(find.byKey(const Key('send-quote-r1')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('send-quote-r1')));
+      await tester.pumpAndSettle();
+      expect(find.text('Send a quote'), findsWidgets);
+
+      // An empty line is refused.
+      await tester.dragUntilVisible(
+        find.byKey(const Key('quote-send')),
+        find.byType(ListView).last,
+        const Offset(0, -200),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('quote-send')));
+      await tester.pumpAndSettle();
+      expect(find.text('Add at least one line.'), findsOneWidget);
+
+      await tester.dragUntilVisible(
+        find.byKey(const Key('line-0-description')),
+        find.byType(ListView).last,
+        const Offset(0, 200),
+      );
+      await tester.pumpAndSettle();
+      await tester.enterText(
+        find.byKey(const Key('line-0-description')),
+        'Replace front brake pads',
+      );
+      await tester.enterText(find.byKey(const Key('line-0-price')), '1200');
+      await tester.enterText(
+        find.byKey(const Key('line-1-description')),
+        'Front brake pads',
+      );
+      await tester.enterText(find.byKey(const Key('line-1-qty')), '2');
+      await tester.enterText(find.byKey(const Key('line-1-price')), '1700');
+      await tester.pumpAndSettle();
+      expect(find.text('Total KES 4,600'), findsOneWidget);
+      await tester.dragUntilVisible(
+        find.byKey(const Key('quote-send')),
+        find.byType(ListView).last,
+        const Offset(0, -200),
+      );
+      await tester.pumpAndSettle();
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('quote-send')));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Waiting for the owner to answer.'), findsOneWidget);
+      expect(find.text('Send a new quote'), findsOneWidget);
+      final sent = (await inbox.latestQuote('r1'))!;
+      expect(sent.totalKes, 4600);
+      expect(sent.lines.map((l) => l.kind), [
+        QuoteLineKind.labour,
+        QuoteLineKind.part,
+      ]);
     });
 
     testWidgets('take one request and pass on another', (tester) async {

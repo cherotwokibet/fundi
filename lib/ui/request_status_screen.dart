@@ -4,9 +4,11 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../data/provider_repository.dart';
+import '../models/quote.dart';
 import '../models/service_provider.dart';
 import '../state/app_state.dart';
 import 'browse_screen.dart';
+import 'quote_screen.dart';
 import 'theme.dart';
 import 'widgets.dart';
 
@@ -37,6 +39,9 @@ class _State extends ConsumerState<RequestStatusScreen> {
       if (!mounted) return;
       try {
         final fresh = await ref.refresh(openRequestProvider.future);
+        if (fresh != null && fresh.accepted) {
+          ref.invalidate(quoteProvider(fresh.id));
+        }
         if (mounted) await _maybeSendOn(fresh);
       } catch (_) {
         // Shown on screen by the provider's error state.
@@ -185,10 +190,12 @@ class _State extends ConsumerState<RequestStatusScreen> {
         badge: const _Badge(icon: Icons.check_rounded, strong: true),
         children: [
           const Text(
-            'Call to agree where to meet. You pay the mechanic directly for now; paying in the app comes later.',
+            'Call to agree where to meet. If they send a quote, it shows here. '
+            'You pay the mechanic directly for now; paying in the app comes later.',
             style: TextStyle(color: muted, fontSize: 14, height: 1.4),
           ),
           const SizedBox(height: 16),
+          _QuoteCard(requestId: r.id, mechanic: name),
           BigButton(
             key: const Key('status-call'),
             label: 'Call $name',
@@ -363,6 +370,99 @@ class _Empty extends StatelessWidget {
           const SizedBox(height: 20),
           action,
         ],
+      ),
+    );
+  }
+}
+
+/// The mechanic's quote, with Approve and Decline while it waits.
+class _QuoteCard extends ConsumerStatefulWidget {
+  const _QuoteCard({required this.requestId, required this.mechanic});
+  final String requestId;
+  final String mechanic;
+
+  @override
+  ConsumerState<_QuoteCard> createState() => _QuoteCardState();
+}
+
+class _QuoteCardState extends ConsumerState<_QuoteCard> {
+  bool busy = false;
+
+  Future<void> _answer(Quote q, bool approve) async {
+    final messenger = ScaffoldMessenger.of(context);
+    setState(() => busy = true);
+    try {
+      await ref.read(repositoryProvider).respondToQuote(q.id, approve: approve);
+      messenger.showSnackBar(
+        SnackBar(
+          content: Text(
+            approve
+                ? 'Approved. ${widget.mechanic} can go ahead.'
+                : 'Declined. ${widget.mechanic} can send a new quote.',
+          ),
+        ),
+      );
+    } catch (_) {
+      messenger.showSnackBar(
+        const SnackBar(
+          content: Text(
+            'That did not go through. Check your connection and try again.',
+          ),
+        ),
+      );
+    } finally {
+      ref.invalidate(quoteProvider(widget.requestId));
+      if (mounted) setState(() => busy = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final q = ref.watch(quoteProvider(widget.requestId)).value;
+    if (q == null) return const SizedBox.shrink();
+    return Card(
+      key: const Key('owner-quote'),
+      margin: const EdgeInsets.only(bottom: 16),
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Text(
+              switch (q.status) {
+                QuoteStatus.approved => 'You approved this quote',
+                QuoteStatus.declined => 'You declined this quote',
+                _ => 'Quote from ${widget.mechanic}',
+              },
+              style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w700),
+            ),
+            const SizedBox(height: 8),
+            QuoteLines(q),
+            if (q.waiting) ...[
+              const SizedBox(height: 12),
+              FilledButton(
+                key: const Key('quote-approve'),
+                style: FilledButton.styleFrom(
+                  minimumSize: const Size.fromHeight(52),
+                ),
+                onPressed: busy ? null : () => _answer(q, true),
+                child: Text('Approve ${q.totalText}'),
+              ),
+              TextButton(
+                key: const Key('quote-decline'),
+                onPressed: busy ? null : () => _answer(q, false),
+                child: const Text('Decline'),
+              ),
+            ] else if (q.status == QuoteStatus.declined)
+              const Padding(
+                padding: EdgeInsets.only(top: 8),
+                child: Text(
+                  'Call the mechanic to talk it through. They can send a new quote.',
+                  style: TextStyle(color: muted, fontSize: 13),
+                ),
+              ),
+          ],
+        ),
       ),
     );
   }

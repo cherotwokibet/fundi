@@ -36,6 +36,18 @@ Every screen is tested against one question: does this make the owner do more?
 
 Gates: 90 verified providers live before Phase 2; 300 paid jobs in the pilot before Phase 3.
 
+## State of the build (20 Nov 2026)
+
+All migrations up to `20261120030000_sms_alerts.sql` are applied live (checked 20 Nov).
+Branch `feature/admin-onboarding-parts` is on GitHub as PR #2; GitHub Actions (`ci.yml`)
+runs the Flutter tests and the SQL rule tests on every push and passed on the PR.
+
+Phase 2 started: **itemised quotes** (`20261121000000_quotes.sql`, own SQL test). On a job
+they took, the mechanic sends lines of labour, parts and other costs; the owner sees them on
+My repair and taps Approve or Decline, no sign-up. A new quote replaces one not yet answered;
+extra work after approval is a new quote. The mechanic gets a text when the owner answers.
+**Quotes migration not yet applied live.** 48 Flutter tests, nine SQL test files.
+
 ## State of the build (19 Nov 2026, night)
 
 Night of 19 Nov, three more migrations on the same branch:
@@ -46,7 +58,7 @@ Night of 19 Nov, three more migrations on the same branch:
 - `20261120030000_sms_alerts.sql` — texts queued in `sms_outbox` for: a mechanic getting a
   request, a shop getting an order, a buyer's order confirmed / ready / cancelled. Not sent
   yet; testers see them on the test codes page under "Text alerts".
-The last two are **not applied live yet**. 46 Flutter tests and eight SQL test files pass.
+All three are applied live (20 Nov). 46 Flutter tests and eight SQL test files pass.
 
 
 Re-matching (migration `20261120000000_rematch_on_pass.sql`, own SQL test): a passed-on
@@ -106,7 +118,7 @@ owner's call.
 **Parts marketplace gaps:** no in-app payment or delivery. SMS alerts are queued but nothing
 sends them until a real SMS provider is connected (an Edge Function reading `sms_outbox`).
 
-**Next build items:** apply the remaining 20 Nov migrations to the live project, connect an SMS provider for sign-in codes and alerts, and onboard the first real
+**Next build items:** apply the quotes migration live, connect an SMS provider for sign-in codes and alerts, and onboard the first real
 garage and parts shop through the admin console; test the owner flow with five car owners on their own phones; then
 Phase 2, starting with owner phone sign-in and quotes.
 

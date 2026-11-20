@@ -3,8 +3,10 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../data/account_repository.dart';
 import '../data/inbox_repository.dart';
+import '../models/quote.dart';
 import '../models/service_provider.dart';
 import '../state/app_state.dart';
+import 'quote_screen.dart';
 import 'theme.dart';
 import 'widgets.dart';
 
@@ -306,6 +308,7 @@ class _RequestCardState extends ConsumerState<_RequestCard> {
                   style: TextStyle(fontSize: 13),
                 ),
               ),
+            if (r.status == RequestStatus.accepted) _QuoteSection(r.id),
             if (r.waiting) ...[
               FilledButton(
                 key: Key('accept-${r.id}'),
@@ -321,6 +324,70 @@ class _RequestCardState extends ConsumerState<_RequestCard> {
           ],
         ),
       ),
+    );
+  }
+}
+
+/// On a job the mechanic took: the latest quote and a button to send one.
+class _QuoteSection extends ConsumerWidget {
+  const _QuoteSection(this.requestId);
+  final String requestId;
+
+  Future<void> _write(BuildContext context, WidgetRef ref) async {
+    final sent = await Navigator.of(context).push<bool>(
+      MaterialPageRoute(builder: (_) => QuoteFormScreen(requestId: requestId)),
+    );
+    if (sent == true) {
+      ref.invalidate(inboxQuoteProvider(requestId));
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Quote sent. The owner sees it in the app.'),
+          ),
+        );
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final q = ref.watch(inboxQuoteProvider(requestId)).value;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        if (q != null) ...[
+          Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: tint,
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Text(
+                  switch (q.status) {
+                    QuoteStatus.approved => 'Approved by the owner. Go ahead.',
+                    QuoteStatus.declined => 'Declined by the owner.',
+                    _ => 'Waiting for the owner to answer.',
+                  },
+                  key: Key('quote-status-$requestId'),
+                  style: const TextStyle(fontWeight: FontWeight.w700),
+                ),
+                const SizedBox(height: 6),
+                QuoteLines(q),
+              ],
+            ),
+          ),
+          const SizedBox(height: 8),
+        ],
+        OutlinedButton.icon(
+          key: Key('send-quote-$requestId'),
+          onPressed: () => _write(context, ref),
+          icon: const Icon(Icons.request_quote_outlined),
+          label: Text(q == null ? 'Send a quote' : 'Send a new quote'),
+        ),
+      ],
     );
   }
 }

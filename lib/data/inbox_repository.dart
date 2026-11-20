@@ -1,5 +1,6 @@
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+import '../models/quote.dart';
 import '../models/service_provider.dart';
 import 'account_repository.dart';
 
@@ -66,6 +67,16 @@ abstract class InboxRepository {
   /// A short-lived link to a request's photo or voice note.
   /// Empty in sample mode, where there is no real file.
   Future<String> fileUrl(String path);
+
+  /// Sends a quote on a job the mechanic took. Replaces one still waiting.
+  Future<void> sendQuote(
+    String requestId,
+    List<QuoteLine> lines, {
+    String? note,
+  });
+
+  /// The latest quote on a request (not counting replaced ones), or null.
+  Future<Quote?> latestQuote(String requestId);
 }
 
 class SupabaseInboxRepository implements InboxRepository {
@@ -95,6 +106,39 @@ class SupabaseInboxRepository implements InboxRepository {
   @override
   Future<String> fileUrl(String path) =>
       _client.storage.from('requests').createSignedUrl(path, 600);
+
+  @override
+  Future<void> sendQuote(
+    String requestId,
+    List<QuoteLine> lines, {
+    String? note,
+  }) async {
+    try {
+      await _client.rpc(
+        'send_quote',
+        params: {
+          'p_request': requestId,
+          'p_lines': [for (final l in lines) l.toJson()],
+          'p_note': note,
+        },
+      );
+    } on PostgrestException catch (e) {
+      throw AccountException(e.message);
+    }
+  }
+
+  @override
+  Future<Quote?> latestQuote(String requestId) async {
+    final row = await _client
+        .from('quotes')
+        .select(Quote.columns)
+        .eq('request_id', requestId)
+        .neq('status', 'withdrawn')
+        .order('created_at', ascending: false)
+        .limit(1)
+        .maybeSingle();
+    return row == null ? null : Quote.fromRow(row);
+  }
 }
 
 /// Invented requests so the inbox can be tried without a backend.
@@ -157,4 +201,35 @@ class SampleInboxRepository implements InboxRepository {
 
   @override
   Future<String> fileUrl(String path) async => '';
+
+  final Map<String, Quote> quotes = {};
+  int _quoteSeq = 0;
+
+  @override
+  Future<void> sendQuote(
+    String requestId,
+    List<QuoteLine> lines, {
+    String? note,
+  }) async {
+    final ok = _requests.any(
+      (r) => r.id == requestId && r.status == RequestStatus.accepted,
+    );
+    if (!ok) {
+      throw AccountException(
+        'Only the mechanic who took this request can quote it',
+      );
+    }
+    if (lines.isEmpty || lines.length > 20) {
+      throw AccountException('A quote needs between 1 and 20 lines');
+    }
+    quotes[requestId] = Quote.draft(
+      id: 'sq${++_quoteSeq}',
+      requestId: requestId,
+      lines: lines,
+      note: note,
+    );
+  }
+
+  @override
+  Future<Quote?> latestQuote(String requestId) async => quotes[requestId];
 }
