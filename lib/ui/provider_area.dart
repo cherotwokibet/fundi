@@ -6,6 +6,7 @@ import '../data/account_repository.dart';
 import '../models/service_provider.dart';
 import '../state/app_state.dart';
 import 'admin_screen.dart';
+import 'inbox_screen.dart';
 import 'location_bar.dart';
 import 'theme.dart';
 
@@ -436,6 +437,8 @@ class _ManageState extends ConsumerState<_ManageScreen> {
             ),
           ],
           ListingStatus.approved => [
+            const InboxEntry(),
+            const SizedBox(height: 20),
             const Text(
               'Are you taking jobs now?',
               style: TextStyle(fontSize: 20, fontWeight: FontWeight.w700),

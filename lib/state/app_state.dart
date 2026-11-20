@@ -7,7 +7,9 @@ import 'package:url_launcher/url_launcher.dart';
 
 import '../data/account_repository.dart';
 import '../data/admin_repository.dart';
+import '../data/inbox_repository.dart';
 import '../data/provider_repository.dart';
+import '../data/voice_player.dart';
 import '../data/voice_recorder.dart';
 import '../data/zones.dart';
 import '../models/service_provider.dart';
@@ -51,6 +53,19 @@ final isAdminProvider = FutureProvider<bool>((ref) {
   final account = ref.watch(accountProvider);
   return account.isSignedIn ? account.isAdmin() : Future.value(false);
 });
+
+/// Requests sent to the signed-in mechanic or garage.
+final inboxRepositoryProvider = Provider<InboxRepository>(
+  (ref) => SampleInboxRepository(),
+);
+
+final inboxProvider = FutureProvider<List<IncomingRequest>>((ref) {
+  ref.watch(accountVersionProvider);
+  return ref.watch(inboxRepositoryProvider).myRequests();
+});
+
+/// Plays voice notes in the inbox. Overridden in tests.
+final voicePlayerProvider = Provider<VoicePlayer>((ref) => DeviceVoicePlayer());
 
 final adminProvider = Provider<AdminRepository>(
   (ref) => SampleAdminRepository(),

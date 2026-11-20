@@ -7,7 +7,10 @@ create unique index providers_one_per_owner
 
 -- Availability is set through this function only, so the expiry always
 -- comes from the server clock and cannot be set far into the future.
-drop policy availability_owner_write on public.availability;
+-- The old rule is switched off rather than dropped (same effect, and it
+-- avoids a destructive statement on a live project).
+alter policy availability_owner_write on public.availability
+  using (false) with check (false);
 revoke insert, update on public.availability from authenticated;
 
 create or replace function public.set_my_availability(p_status public.availability_status)

@@ -5,7 +5,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fundi/data/account_repository.dart';
 import 'package:fundi/data/admin_repository.dart';
+import 'package:fundi/data/inbox_repository.dart';
 import 'package:fundi/data/provider_repository.dart';
+import 'package:fundi/data/voice_player.dart';
 import 'package:fundi/data/voice_recorder.dart';
 import 'package:fundi/data/zones.dart';
 import 'package:fundi/main.dart';
@@ -313,6 +315,125 @@ void main() {
     },
   );
 
+  group('mechanic inbox', () {
+    late _LinkedInbox inbox;
+    late _FakePlayer player;
+
+    Future<void> pumpApproved(WidgetTester tester) async {
+      final account = SampleAccountRepository();
+      await account.verifyCode(
+        '+254712345678',
+        SampleAccountRepository.sampleCode,
+      );
+      await account.apply(
+        const ListingApplication(
+          type: ProviderType.mobileMechanic,
+          name: 'Baraka Mobile Mechanic',
+          businessPhone: '+254722000111',
+          area: 'Kasarani',
+          lat: -1.22,
+          lng: 36.9,
+          serviceRadiusKm: 5,
+        ),
+      );
+      final bytes = Uint8List.fromList([1]);
+      await account.uploadDocument(
+        DocumentKind.nationalId,
+        bytes,
+        'image/jpeg',
+      );
+      await account.uploadDocument(DocumentKind.selfie, bytes, 'image/jpeg');
+      inbox = _LinkedInbox();
+      player = _FakePlayer();
+      tester.view.physicalSize = const Size(1080, 2340);
+      tester.view.devicePixelRatio = 2.75;
+      addTearDown(tester.view.reset);
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [
+            accountProvider.overrideWithValue(account),
+            inboxRepositoryProvider.overrideWithValue(inbox),
+            voicePlayerProvider.overrideWithValue(player),
+            gpsLookupProvider.overrideWithValue(() async => null),
+          ],
+          child: const FundiApp(),
+        ),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('home-provider')));
+      await tester.pumpAndSettle();
+    }
+
+    testWidgets('shows waiting requests with note and voice note', (
+      tester,
+    ) async {
+      await pumpApproved(tester);
+      expect(find.text('2 owners are waiting for an answer'), findsOneWidget);
+      await tester.tap(find.byKey(const Key('open-inbox')));
+      await tester.pumpAndSettle();
+
+      expect(find.textContaining('clicking sound'), findsOneWidget);
+      expect(
+        find.text('No note. The owner wants you to look at the car.'),
+        findsOneWidget,
+      );
+      await tester.tap(find.byKey(const Key('voice-r1')));
+      await tester.pumpAndSettle();
+      expect(player.played, ['https://files.test/sample/voice']);
+    });
+
+    testWidgets('take one request and pass on another', (tester) async {
+      await pumpApproved(tester);
+      await tester.tap(find.byKey(const Key('open-inbox')));
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.byKey(const Key('accept-r1')));
+      await tester.pumpAndSettle();
+      expect(find.text('You took this'), findsOneWidget);
+      expect(find.byKey(const Key('accept-r1')), findsNothing);
+      // Let the confirmation message clear before the next tap.
+      await tester.pump(const Duration(seconds: 5));
+      await tester.pumpAndSettle();
+
+      await tester.ensureVisible(find.byKey(const Key('decline-r2')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('decline-r2')));
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('request-r2')), findsNothing);
+
+      // Back on the manage screen nothing is waiting any more.
+      await tester.pageBack();
+      await tester.pumpAndSettle();
+      expect(find.text('No new requests'), findsOneWidget);
+    });
+
+    test('a request can only be answered once', () async {
+      final repo = SampleInboxRepository();
+      await repo.respond('r1', accept: true);
+      expect(
+        () => repo.respond('r1', accept: false),
+        throwsA(isA<AccountException>()),
+      );
+    });
+
+    test('fromRow maps an inbox row', () {
+      final r = IncomingRequest.fromRow({
+        'id': 'x',
+        'mode': 'visit_garage',
+        'created_at': '2026-11-11T08:00:00Z',
+        'status': 'accepted',
+        'note': null,
+        'voice_path': 'u/1/voice',
+        'distance_km': 2,
+      });
+      expect(r.mode, RequestMode.visitGarage);
+      expect(r.status, RequestStatus.accepted);
+      expect(r.waiting, isFalse);
+      expect(r.voicePath, 'u/1/voice');
+      expect(r.distanceKm, 2.0);
+    });
+  });
+
   test('normalizeKenyanPhone accepts common formats and rejects others', () {
     expect(normalizeKenyanPhone('0712 345 678'), '+254712345678');
     expect(normalizeKenyanPhone('712345678'), '+254712345678');
@@ -334,4 +455,20 @@ class _FakeRecorder implements VoiceRecorder {
 
   @override
   Future<void> cancel() async {}
+}
+
+/// Sample inbox that hands out a link, so playback can be checked.
+class _LinkedInbox extends SampleInboxRepository {
+  @override
+  Future<String> fileUrl(String path) async => 'https://files.test/$path';
+}
+
+class _FakePlayer implements VoicePlayer {
+  final List<String> played = [];
+
+  @override
+  Future<void> play(String url) async => played.add(url);
+
+  @override
+  Future<void> stop() async {}
 }
