@@ -120,7 +120,10 @@ test stub does not copy: a migration that limits columns must `revoke all` first
 
 **Complaints and refunds** (`20261122000000_complaints_refunds.sql`, own SQL test
 `complaints_test.sql`). Applied live; access checked there (no table-level grants, no
-access to the refund number). Not yet tried end to end in the live app.
+access to the refund number). The whole journey (request, take, quote, approve, done,
+complaint with refund, one reply, admin decision, refund paid, payout hold and release,
+texts) passed on the live database on 21 Nov 2026 with `supabase/checks/live_complaint_journey.sql`,
+which rolls itself back. Not yet tapped through in the live app with real phones.
 - The owner taps "Report a problem" on My repair while a job is under way, or
   "Problem with the work by …?" on the home screen for 14 days after it is done. They say
   what went wrong in their own words; nothing else to pick. Once per job.
