@@ -6,6 +6,7 @@ import '../models/service_provider.dart';
 import '../state/app_state.dart';
 import 'provider_detail_screen.dart';
 import 'theme.dart';
+import 'widgets.dart';
 
 /// Logs the tap, opens the phone dialer, then asks one question afterwards.
 Future<void> callProvider(
@@ -47,35 +48,13 @@ Future<void> callProvider(
   );
 }
 
+/// Kept for the profile screen: the status pill without freshness.
 class AvailabilityPill extends StatelessWidget {
   const AvailabilityPill(this.availability, {super.key});
   final Availability availability;
 
   @override
-  Widget build(BuildContext context) {
-    final c = availability.color;
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Container(
-          width: 8,
-          height: 8,
-          decoration: BoxDecoration(color: c, shape: BoxShape.circle),
-        ),
-        const SizedBox(width: 6),
-        Flexible(
-          child: Text(
-            availability.label,
-            style: TextStyle(
-              color: c,
-              fontWeight: FontWeight.w600,
-              fontSize: 13,
-            ),
-          ),
-        ),
-      ],
-    );
-  }
+  Widget build(BuildContext context) => StatusPill(availability);
 }
 
 class VerifiedBadge extends StatelessWidget {
@@ -123,94 +102,81 @@ class ProviderAvatar extends StatelessWidget {
   }
 }
 
-/// Only what helps an owner choose, plus one big Call button.
+/// Only what helps an owner choose, plus Call. Calling is never blocked,
+/// whatever the mechanic's status.
 class ProviderCard extends ConsumerWidget {
-  const ProviderCard(this.provider, {super.key});
+  const ProviderCard(this.provider, {super.key, this.quietCall = false});
   final ServiceProvider provider;
+
+  /// True when another button on the screen is the main action.
+  final bool quietCall;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final p = provider;
-    final grey = Theme.of(context).colorScheme.onSurfaceVariant;
+    final fee = feeParts(p);
     return Card(
       clipBehavior: Clip.antiAlias,
       child: InkWell(
-        onTap: () => Navigator.of(context)
-            .push(MaterialPageRoute(builder: (_) => ProviderDetailScreen(p))),
+        onTap: () => Navigator.of(context).push(
+          MaterialPageRoute<void>(builder: (_) => ProviderDetailScreen(p)),
+        ),
         child: Padding(
           padding: const EdgeInsets.all(16),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
+              StatusPill(p.availability, setAt: p.availabilitySetAt),
+              const SizedBox(height: 10),
+              Text(p.name, style: heading(20)),
+              const SizedBox(height: 3),
+              Text(
+                '${p.isMobile ? 'Comes to you' : 'Garage'} · ${p.area} · ${p.distanceKm} km',
+                style: const TextStyle(color: muted, fontSize: 14),
+              ),
+              const SizedBox(height: 10),
+              CheckedLine(p),
+              const Padding(
+                padding: EdgeInsets.symmetric(vertical: 12),
+                child: Divider(height: 1, color: hairline),
+              ),
               Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  ProviderAvatar(p),
-                  const SizedBox(width: 12),
                   Expanded(
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
-                          p.name,
+                          fee.amount,
                           style: const TextStyle(
-                            fontSize: 16,
+                            fontSize: 17,
                             fontWeight: FontWeight.w700,
                             color: ink,
                           ),
                         ),
-                        const SizedBox(height: 2),
                         Text(
-                          '${p.isMobile ? 'Comes to you' : 'Garage'} · ${p.area} · ${p.distanceKm} km',
-                          style: TextStyle(color: grey, fontSize: 13),
-                        ),
-                        const SizedBox(height: 8),
-                        Wrap(
-                          spacing: 12,
-                          runSpacing: 4,
-                          children: [
-                            const VerifiedBadge(),
-                            if (p.ratingCount > 0)
-                              Row(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  const Icon(
-                                    Icons.star_rounded,
-                                    size: 16,
-                                    color: Color(0xFFE0A100),
-                                  ),
-                                  const SizedBox(width: 2),
-                                  Text(
-                                    '${p.ratingAvg} (${p.ratingCount})',
-                                    style: const TextStyle(fontSize: 13),
-                                  ),
-                                ],
-                              ),
-                            AvailabilityPill(p.availability),
-                          ],
+                          fee.covers,
+                          style: const TextStyle(color: muted, fontSize: 13),
                         ),
                       ],
                     ),
                   ),
-                ],
-              ),
-              const SizedBox(height: 12),
-              Row(
-                children: [
-                  Expanded(
-                    child: Text(
-                      feeText(p.calloutFeeKes),
-                      style: TextStyle(color: grey, fontSize: 13),
-                    ),
-                  ),
+                  const SizedBox(width: 12),
                   FilledButton.icon(
                     key: Key('call-${p.id}'),
                     style: FilledButton.styleFrom(
-                      backgroundColor: callGreen,
-                      minimumSize: const Size(120, 48),
+                      backgroundColor: quietCall ? Colors.white : forest,
+                      foregroundColor: quietCall ? forest : Colors.white,
+                      minimumSize: const Size(104, 48),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(14),
+                        side: quietCall
+                            ? const BorderSide(color: forest, width: 1.5)
+                            : BorderSide.none,
+                      ),
                     ),
                     onPressed: () => callProvider(context, ref, p),
-                    icon: const Icon(Icons.call),
+                    icon: const Icon(Icons.call, size: 20),
                     label: const Text('Call'),
                   ),
                 ],

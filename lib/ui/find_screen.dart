@@ -9,10 +9,13 @@ import '../state/app_state.dart';
 import 'browse_screen.dart';
 import 'location_bar.dart';
 import 'provider_card.dart';
+import 'request_status_screen.dart';
 import 'theme.dart';
+import 'widgets.dart';
 
 /// "Find Me a Mechanic": one choice, an optional note, then the best match.
 /// The owner never picks a repair category; the mechanic diagnoses.
+/// Nothing is sent to a mechanic until the owner taps "Request this mechanic".
 class FindScreen extends ConsumerStatefulWidget {
   const FindScreen({super.key});
 
@@ -31,6 +34,7 @@ class _State extends ConsumerState<FindScreen> {
   late final recorder = ref.read(voiceRecorderProvider);
   static const maxSeconds = 60;
   bool busy = false;
+  bool sending = false;
   List<ServiceProvider>? matches;
 
   @override
@@ -55,6 +59,7 @@ class _State extends ConsumerState<FindScreen> {
 
   void _choosePhoto() {
     showModalBottomSheet<void>(
+      constraints: sheetConstraints,
       context: context,
       showDragHandle: true,
       builder: (sheet) => SafeArea(
@@ -130,23 +135,8 @@ class _State extends ConsumerState<FindScreen> {
     if (!mounted) return;
     setState(() => busy = true);
     try {
-      final loc = await ref.read(locationProvider.future);
       final all = await ref.read(nearbyProvider.future);
       final found = bestMatches(all, mode);
-      // Saving the request must not stop the owner from seeing a mechanic.
-      ref
-          .read(repositoryProvider)
-          .createRequest(
-            mode: mode,
-            lat: loc.lat,
-            lng: loc.lng,
-            area: loc.label,
-            note: note.text,
-            photo: photo,
-            voice: voice,
-            providerId: found.isEmpty ? null : found.first.id,
-          )
-          .catchError((_) {});
       if (mounted) setState(() => matches = found);
     } catch (_) {
       messenger.showSnackBar(
@@ -159,12 +149,71 @@ class _State extends ConsumerState<FindScreen> {
     }
   }
 
+  /// The owner said yes: now the request, note, photo and voice note go to
+  /// this mechanic.
+  Future<void> _request(ServiceProvider p) async {
+    final messenger = ScaffoldMessenger.of(context);
+    final navigator = Navigator.of(context);
+    setState(() => sending = true);
+    try {
+      final loc = await ref.read(locationProvider.future);
+      await ref
+          .read(repositoryProvider)
+          .createRequest(
+            mode: mode,
+            lat: loc.lat,
+            lng: loc.lng,
+            area: loc.label,
+            note: note.text,
+            photo: photo,
+            voice: voice,
+            providerId: p.id,
+          );
+      ref.read(requestVersionProvider.notifier).bump();
+      navigator.pushReplacement(
+        MaterialPageRoute<void>(builder: (_) => const RequestStatusScreen()),
+      );
+    } on RequestLimitException catch (e) {
+      messenger.showSnackBar(SnackBar(content: Text(e.message)));
+    } catch (_) {
+      messenger.showSnackBar(
+        SnackBar(
+          content: Text(
+            'Could not send the request. You can still call ${p.name}.',
+          ),
+        ),
+      );
+    } finally {
+      if (mounted) setState(() => sending = false);
+    }
+  }
+
+  String _willGet(ServiceProvider p) {
+    final parts = [
+      'your location',
+      if (note.text.trim().isNotEmpty) 'your note',
+      if (photo != null) '1 photo',
+      if (voice != null) '1 voice note',
+    ];
+    final list = parts.length == 1
+        ? parts.first
+        : '${parts.sublist(0, parts.length - 1).join(', ')} and ${parts.last}';
+    return '${p.name} will get $list. Nothing is sent until you tap the button below.';
+  }
+
   @override
   Widget build(BuildContext context) {
     final found = matches;
-    return Scaffold(
-      appBar: AppBar(title: const Text('Find me a mechanic')),
-      body: found != null ? _results(found) : _form(),
+    return PopScope(
+      // Back from the match returns to the form, not all the way home.
+      canPop: found == null,
+      onPopInvokedWithResult: (didPop, _) {
+        if (!didPop) setState(() => matches = null);
+      },
+      child: Scaffold(
+        appBar: AppBar(),
+        body: ContentWidth(child: found != null ? _results(found) : _form()),
+      ),
     );
   }
 
@@ -172,18 +221,13 @@ class _State extends ConsumerState<FindScreen> {
     return ListView(
       padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
       children: [
-        const LocationBar(),
-        const SizedBox(height: 12),
-        const Text(
-          'Where should the mechanic help you?',
-          style: TextStyle(fontSize: 17, fontWeight: FontWeight.w700),
-        ),
-        const SizedBox(height: 12),
+        const ScreenTitle('Where\'s the car?', subtitle: LocationBar()),
+        const SizedBox(height: 8),
         _ModeTile(
           key: const Key('mode-come'),
           icon: Icons.directions_car_outlined,
           title: 'Come to me',
-          subtitle: 'A mobile mechanic comes to where the car is',
+          subtitle: 'The car is stuck where it is',
           selected: mode == RequestMode.comeToMe,
           onTap: () => setState(() => mode = RequestMode.comeToMe),
         ),
@@ -191,23 +235,43 @@ class _State extends ConsumerState<FindScreen> {
         _ModeTile(
           key: const Key('mode-visit'),
           icon: Icons.garage_outlined,
-          title: 'I can go to a garage',
+          title: 'I can drive to a garage',
           subtitle: 'The car can still move',
           selected: mode == RequestMode.visitGarage,
           onTap: () => setState(() => mode = RequestMode.visitGarage),
         ),
-        const SizedBox(height: 20),
+        const SizedBox(height: 18),
+        const Text.rich(
+          TextSpan(
+            text: 'Tell them more ',
+            style: TextStyle(fontWeight: FontWeight.w700, fontSize: 15),
+            children: [
+              TextSpan(
+                text: '(optional)',
+                style: TextStyle(fontWeight: FontWeight.w400, color: muted),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 8),
         TextField(
           key: const Key('note'),
           controller: note,
           minLines: 2,
           maxLines: 4,
           textCapitalization: TextCapitalization.sentences,
-          decoration: const InputDecoration(
-            labelText: 'What is happening? (optional)',
-            hintText: 'In your own words, e.g. "It won\'t start"',
-            border: OutlineInputBorder(),
-            alignLabelWithHint: true,
+          decoration: InputDecoration(
+            hintText: 'What is happening? In your own words.',
+            filled: true,
+            fillColor: Colors.white,
+            border: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(16),
+              borderSide: const BorderSide(color: Color(0xFFC9D0CA)),
+            ),
+            enabledBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(16),
+              borderSide: const BorderSide(color: Color(0xFFC9D0CA)),
+            ),
           ),
         ),
         const SizedBox(height: 10),
@@ -231,7 +295,7 @@ class _State extends ConsumerState<FindScreen> {
                     ? 'Stop (${seconds}s)'
                     : voice != null
                     ? 'Voice note added'
-                    : 'Say it instead',
+                    : 'Voice note',
               ),
             ),
             OutlinedButton.icon(
@@ -242,7 +306,7 @@ class _State extends ConsumerState<FindScreen> {
                     ? Icons.check_circle
                     : Icons.photo_camera_outlined,
               ),
-              label: Text(photo != null ? 'Photo added' : 'Add a photo'),
+              label: Text(photo != null ? 'Photo added' : 'Photo'),
             ),
             if (voice != null || photo != null)
               TextButton(
@@ -256,24 +320,17 @@ class _State extends ConsumerState<FindScreen> {
           ],
         ),
         const SizedBox(height: 8),
-        Text(
-          'All optional. You don\'t need to know what is wrong; the mechanic will check the car.',
-          style: TextStyle(
-            color: Theme.of(context).colorScheme.onSurfaceVariant,
-            fontSize: 13,
-          ),
+        const Text(
+          'You don\'t need to know what\'s wrong. The mechanic checks the car.',
+          style: TextStyle(color: muted, fontSize: 13),
         ),
         const SizedBox(height: 20),
-        FilledButton(
+        BigButton(
           key: const Key('find-submit'),
-          onPressed: busy ? null : _find,
-          child: busy
-              ? const SizedBox(
-                  width: 22,
-                  height: 22,
-                  child: CircularProgressIndicator(strokeWidth: 2.5),
-                )
-              : const Text('Find a mechanic'),
+          label: 'Find a mechanic',
+          trailingIcon: Icons.arrow_forward,
+          busy: busy,
+          onPressed: _find,
         ),
       ],
     );
@@ -301,11 +358,11 @@ class _State extends ConsumerState<FindScreen> {
               textAlign: TextAlign.center,
             ),
             const SizedBox(height: 20),
-            FilledButton(
+            BigButton(
+              label: 'See all mechanics nearby',
               onPressed: () => Navigator.of(context).pushReplacement(
-                MaterialPageRoute(builder: (_) => const BrowseScreen()),
+                MaterialPageRoute<void>(builder: (_) => const BrowseScreen()),
               ),
-              child: const Text('See all mechanics nearby'),
             ),
             TextButton(
               onPressed: () => setState(() => matches = null),
@@ -315,29 +372,43 @@ class _State extends ConsumerState<FindScreen> {
         ),
       );
     }
+    final p = found.first;
     return ListView(
-      padding: const EdgeInsets.fromLTRB(16, 4, 16, 24),
+      padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
       children: [
-        const Text(
-          'Your best match',
-          style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700),
+        const ScreenTitle(
+          'Your match',
+          subtitle: Text('Nearest checked mechanic who is free now'),
         ),
-        const SizedBox(height: 4),
-        const Text('Verified and nearest to you. Call to get help now.'),
+        const SizedBox(height: 14),
+        ProviderCard(p, quietCall: true),
         const SizedBox(height: 12),
-        ProviderCard(found.first),
-        if (found.length > 1) ...[
-          const SizedBox(height: 20),
-          const Text(
-            'If they don\'t pick up',
-            style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700),
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+          decoration: BoxDecoration(
+            color: tint,
+            borderRadius: BorderRadius.circular(14),
           ),
-          const SizedBox(height: 10),
-          for (final p in found.skip(1)) ...[
-            ProviderCard(p),
-            const SizedBox(height: 12),
-          ],
-        ],
+          child: Text(
+            _willGet(p),
+            key: const Key('will-get'),
+            style: const TextStyle(fontSize: 14, height: 1.45),
+          ),
+        ),
+        const SizedBox(height: 16),
+        BigButton(
+          key: const Key('request-mechanic'),
+          label: 'Request this mechanic',
+          busy: sending,
+          onPressed: () => _request(p),
+        ),
+        TextButton(
+          key: const Key('see-others'),
+          onPressed: () => Navigator.of(context).pushReplacement(
+            MaterialPageRoute<void>(builder: (_) => const BrowseScreen()),
+          ),
+          child: const Text('See other mechanics nearby'),
+        ),
       ],
     );
   }
@@ -361,11 +432,11 @@ class _ModeTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Material(
-      color: selected ? const Color(0xFFE2EFEA) : Colors.white,
+      color: selected ? const Color(0xFFF1F5EF) : Colors.white,
       shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(14),
+        borderRadius: BorderRadius.circular(18),
         side: BorderSide(
-          color: selected ? brandGreen : const Color(0xFFD5DBD6),
+          color: selected ? brandGreen : hairline,
           width: selected ? 2 : 1,
         ),
       ),
@@ -389,7 +460,7 @@ class _ModeTile extends StatelessWidget {
                         fontWeight: FontWeight.w700,
                       ),
                     ),
-                    Text(subtitle),
+                    Text(subtitle, style: const TextStyle(color: muted)),
                   ],
                 ),
               ),

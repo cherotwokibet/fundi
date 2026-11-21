@@ -3,6 +3,8 @@ import 'dart:typed_data';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../models/service_provider.dart';
+import '../models/trade.dart';
+import 'sample_directory.dart';
 
 enum ListingStatus { pending, approved, suspended }
 
@@ -48,30 +50,6 @@ enum DocumentKind {
   ];
 }
 
-/// What a mechanic or garage fills in to join.
-class ListingApplication {
-  const ListingApplication({
-    required this.type,
-    required this.name,
-    required this.businessPhone,
-    required this.area,
-    required this.lat,
-    required this.lng,
-    required this.serviceRadiusKm,
-    this.calloutFeeKes,
-    this.makes = const [],
-  });
-  final ProviderType type;
-  final String name;
-  final String businessPhone;
-  final String area;
-  final double lat;
-  final double lng;
-  final double serviceRadiusKm;
-  final int? calloutFeeKes;
-  final List<String> makes;
-}
-
 /// Turns what people type (0712 345 678, 712345678, +254712345678) into
 /// +2547XXXXXXXX. Returns null if it is not a Kenyan mobile number.
 String? normalizeKenyanPhone(String input) {
@@ -82,14 +60,19 @@ String? normalizeKenyanPhone(String input) {
   return '+254$d';
 }
 
-/// Sign-in and listing management for mechanics and garages.
+/// Sign-in and listing management for mechanics, garages and parts shops.
+/// Nobody joins here: an admin adds every business and its people first
+/// (see AdminRepository). Signing in links a person to what they were added to.
 abstract class AccountRepository {
   bool get isSignedIn;
   Future<void> sendCode(String phone);
   Future<void> verifyCode(String phone, String code);
   Future<void> signOut();
   Future<MyListing?> myListing();
-  Future<void> apply(ListingApplication application);
+
+  /// Links the signed-in person to the businesses an admin added their
+  /// number to, and returns what they belong to. Safe to call every time.
+  Future<TradeAccess> access();
 
   /// Returns when this availability expires.
   Future<DateTime> setAvailability(Availability status);
@@ -171,26 +154,14 @@ class SupabaseAccountRepository implements AccountRepository {
   }
 
   @override
-  Future<void> apply(ListingApplication a) async {
-    final uid = _client.auth.currentUser!.id;
-    final garage = a.type == ProviderType.garage;
-    await _client.from('profiles').upsert({
-      'id': uid,
-      'phone': _client.auth.currentUser!.phone,
-      'full_name': a.name,
-      'role': garage ? 'garage_staff' : 'mechanic',
-    });
-    await _client.from('providers').insert({
-      'owner_user_id': uid,
-      'type': garage ? 'garage' : 'mobile_mechanic',
-      'display_name': a.name,
-      'business_phone': a.businessPhone,
-      'area': a.area,
-      'location': 'SRID=4326;POINT(${a.lng} ${a.lat})',
-      'service_radius_km': garage ? 0 : a.serviceRadiusKm,
-      'callout_fee_kes': a.calloutFeeKes,
-      'makes': a.makes,
-    });
+  Future<TradeAccess> access() async {
+    final rows = await _client.rpc('claim_my_access') as List;
+    return TradeAccess(
+      memberships: [
+        for (final r in rows) Membership.fromRow(r as Map<String, dynamic>),
+      ],
+      isAdmin: await isAdmin(),
+    );
   }
 
   @override
@@ -247,21 +218,29 @@ class SupabaseAccountRepository implements AccountRepository {
   Future<bool> isAdmin() async => await _client.rpc('is_admin') as bool;
 }
 
-/// In-memory stand-in used until Supabase keys are supplied.
-/// Any phone works; the code is always 123456. A new listing starts as
-/// pending and is approved once both required documents are uploaded, so the
-/// whole journey can be tried. Signing in as [adminPhone] opens the admin console.
+/// In-memory stand-in used until Supabase keys are supplied. It shares a
+/// [SampleDirectory] with the sample admin and parts repositories, so an
+/// admin can add a mechanic in sample mode and then sign in as them.
+/// Any phone works; the code is always 123456. Sign in as [adminPhone] for
+/// the admin console, [sampleMechanicPhone] for a live sample mechanic, or
+/// [sampleShopPhone] for a sample parts shop.
 class SampleAccountRepository implements AccountRepository {
+  SampleAccountRepository([SampleDirectory? directory])
+    : directory = directory ?? SampleDirectory.seeded();
+
   static const sampleCode = '123456';
   static const adminPhone = '+254700000000';
-  bool _signedIn = false;
-  bool _admin = false;
-  final Set<DocumentKind> _documents = {};
-  MyListing? _listing;
-  ListingApplication? lastApplication;
+  static const sampleMechanicPhone = SampleDirectory.mechanicPhone;
+  static const sampleShopPhone = SampleDirectory.shopPhone;
+
+  final SampleDirectory directory;
+  String? _phone;
+
+  /// The signed-in number, or null.
+  String? get phone => _phone;
 
   @override
-  bool get isSignedIn => _signedIn;
+  bool get isSignedIn => _phone != null;
 
   @override
   Future<void> sendCode(String phone) async {}
@@ -269,30 +248,38 @@ class SampleAccountRepository implements AccountRepository {
   @override
   Future<void> verifyCode(String phone, String code) async {
     if (code != sampleCode) throw AccountException('That code is not correct.');
-    _signedIn = true;
-    _admin = phone == adminPhone;
+    _phone = phone;
+    directory.claim(phone);
   }
 
   @override
-  Future<void> signOut() async => _signedIn = false;
+  Future<void> signOut() async => _phone = null;
 
   @override
-  Future<MyListing?> myListing() async => _listing;
+  Future<TradeAccess> access() async => TradeAccess(
+    memberships: _phone == null ? const [] : directory.membershipsFor(_phone!),
+    isAdmin: _phone == adminPhone,
+  );
 
   @override
-  Future<void> apply(ListingApplication a) async {
-    lastApplication = a;
-    _listing = MyListing(
-      id: 'mine',
-      name: a.name,
-      type: a.type,
-      status: ListingStatus.pending,
-      availability: Availability.offline,
+  Future<MyListing?> myListing() async {
+    final p = _phone == null ? null : directory.listingOwnedBy(_phone!);
+    if (p == null) return null;
+    return MyListing(
+      id: p.id,
+      name: p.name,
+      type: p.type,
+      status: p.status,
+      availability: p.availability,
+      availableUntil: p.availableUntil,
     );
   }
 
   @override
-  Future<Set<DocumentKind>> myDocuments() async => {..._documents};
+  Future<Set<DocumentKind>> myDocuments() async {
+    final p = _phone == null ? null : directory.listingOwnedBy(_phone!);
+    return p == null ? {} : {...p.documents.keys};
+  }
 
   @override
   Future<void> uploadDocument(
@@ -300,37 +287,23 @@ class SampleAccountRepository implements AccountRepository {
     Uint8List bytes,
     String mime,
   ) async {
-    _documents.add(kind);
-    final l = _listing!;
-    if (_documents.containsAll({
-      DocumentKind.nationalId,
-      DocumentKind.selfie,
-    })) {
-      _listing = MyListing(
-        id: l.id,
-        name: l.name,
-        type: l.type,
-        status: ListingStatus.approved,
-        availability: l.availability,
-      );
-    }
+    final p = directory.listingOwnedBy(_phone!);
+    if (p == null) throw AccountException('Your listing was not found.');
+    p.documents[kind] = 'sample/${kind.code}';
   }
 
   @override
-  Future<bool> isAdmin() async => _admin;
+  Future<bool> isAdmin() async => _phone == adminPhone;
 
   @override
   Future<DateTime> setAvailability(Availability status) async {
-    final l = _listing!;
+    final p = directory.listingOwnedBy(_phone!);
+    if (p == null || p.status != ListingStatus.approved) {
+      throw AccountException('Only an approved provider can set availability');
+    }
     final until = DateTime.now().add(const Duration(hours: 4));
-    _listing = MyListing(
-      id: l.id,
-      name: l.name,
-      type: l.type,
-      status: l.status,
-      availability: status,
-      availableUntil: until,
-    );
+    p.availability = status;
+    p.availableUntil = until;
     return until;
   }
 }

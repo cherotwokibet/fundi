@@ -53,3 +53,7 @@ app.*.map.json
 *.keystore
 *.jks
 key.properties
+
+# Deploy settings and Netlify state (machine-specific)
+deploy.env
+.netlify/

@@ -7,10 +7,18 @@ import 'package:url_launcher/url_launcher.dart';
 
 import '../data/account_repository.dart';
 import '../data/admin_repository.dart';
+import '../data/dev_codes_repository.dart';
+import '../data/inbox_repository.dart';
+import '../data/parts_repository.dart';
+import '../data/sample_directory.dart';
 import '../data/provider_repository.dart';
+import '../data/voice_player.dart';
 import '../data/voice_recorder.dart';
 import '../data/zones.dart';
+import '../models/complaint.dart';
+import '../models/quote.dart';
 import '../models/service_provider.dart';
+import '../models/trade.dart';
 
 /// Overridden in main.dart with the Supabase repository when keys are set.
 final repositoryProvider = Provider<ProviderRepository>(
@@ -45,15 +53,54 @@ final myDocumentsProvider = FutureProvider<Set<DocumentKind>>((ref) {
   return ref.watch(accountProvider).myDocuments();
 });
 
-/// Whether the signed-in user may open the admin console.
-final isAdminProvider = FutureProvider<bool>((ref) {
+/// What the signed-in person was added to by an admin (and whether they are
+/// an admin). Loading it also links a newly signed-in person to their invites.
+final accessProvider = FutureProvider<TradeAccess>((ref) {
   ref.watch(accountVersionProvider);
   final account = ref.watch(accountProvider);
-  return account.isSignedIn ? account.isAdmin() : Future.value(false);
+  return account.isSignedIn
+      ? account.access()
+      : Future.value(const TradeAccess());
 });
 
+/// Sample repositories share the account's sample data, so what an admin
+/// adds in sample mode is there when that person signs in.
+SampleDirectory _sampleDirectory(Ref ref) {
+  final account = ref.watch(accountProvider);
+  return account is SampleAccountRepository
+      ? account.directory
+      : SampleDirectory.seeded();
+}
+
+/// The trade-only spare parts marketplace.
+final partsProvider = Provider<PartsRepository>((ref) {
+  final account = ref.watch(accountProvider);
+  return SamplePartsRepository(
+    _sampleDirectory(ref),
+    () => account is SampleAccountRepository ? account.phone : null,
+  );
+});
+
+/// Requests sent to the signed-in mechanic or garage.
+final inboxRepositoryProvider = Provider<InboxRepository>(
+  (ref) => SampleInboxRepository(),
+);
+
+final inboxProvider = FutureProvider<List<IncomingRequest>>((ref) {
+  ref.watch(accountVersionProvider);
+  return ref.watch(inboxRepositoryProvider).myRequests();
+});
+
+/// Plays voice notes in the inbox. Overridden in tests.
+final voicePlayerProvider = Provider<VoicePlayer>((ref) => DeviceVoicePlayer());
+
+/// Development only: the mock sign-in codes page.
+final devCodesProvider = Provider<DevCodesRepository>(
+  (ref) => SampleDevCodesRepository(),
+);
+
 final adminProvider = Provider<AdminRepository>(
-  (ref) => SampleAdminRepository(),
+  (ref) => SampleAdminRepository(_sampleDirectory(ref)),
 );
 
 typedef PickedPhoto = ({Uint8List bytes, String mime});
@@ -157,6 +204,16 @@ final nearbyProvider = FutureProvider<List<ServiceProvider>>((ref) async {
   return ref.watch(repositoryProvider).nearby(lat: loc.lat, lng: loc.lng);
 });
 
+/// The owner's open request, if any. Bump [requestVersionProvider] to reload.
+final requestVersionProvider = NotifierProvider<VersionNotifier, int>(
+  VersionNotifier.new,
+);
+
+final openRequestProvider = FutureProvider<OwnerRequest?>((ref) {
+  ref.watch(requestVersionProvider);
+  return ref.watch(repositoryProvider).myOpenRequest();
+});
+
 /// Best matches for "Find Me a Mechanic": only providers that can actually
 /// take the job now, in ranked order. Busy and offline providers never match.
 List<ServiceProvider> bestMatches(
@@ -173,3 +230,40 @@ List<ServiceProvider> bestMatches(
   }).toList()..sort(compareProviders);
   return fits.take(limit).toList();
 }
+
+/// The latest quote on the owner's request (My repair).
+final quoteProvider = FutureProvider.family<Quote?, String>(
+  (ref, requestId) => ref.watch(repositoryProvider).latestQuote(requestId),
+);
+
+/// The latest quote on a job in the mechanic's inbox.
+final inboxQuoteProvider = FutureProvider.family<Quote?, String>(
+  (ref, requestId) => ref.watch(inboxRepositoryProvider).latestQuote(requestId),
+);
+
+/// A finished job the owner has not rated yet, for the home screen.
+final reviewDueProvider = FutureProvider<ReviewDue?>((ref) {
+  ref.watch(requestVersionProvider);
+  return ref.watch(repositoryProvider).reviewDue();
+});
+
+/// The owner's latest finished job, for "Report a problem" on the home screen.
+final lastJobProvider = FutureProvider<LastJob?>((ref) {
+  ref.watch(requestVersionProvider);
+  return ref.watch(repositoryProvider).lastJob();
+});
+
+/// The owner's complaint about a job, or null.
+final complaintProvider = FutureProvider.family<Complaint?, String>((
+  ref,
+  requestId,
+) {
+  ref.watch(requestVersionProvider);
+  return ref.watch(repositoryProvider).complaintFor(requestId);
+});
+
+/// The owner's complaint about a job in the mechanic's inbox, or null.
+final inboxComplaintProvider = FutureProvider.family<Complaint?, String>(
+  (ref, requestId) =>
+      ref.watch(inboxRepositoryProvider).complaintFor(requestId),
+);

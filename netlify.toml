@@ -1,0 +1,18 @@
+# The site is built on your computer by `dart run tool/deploy_web.dart`,
+# so Netlify only serves the files.
+[build]
+  publish = "build/web"
+
+# A test site: keep it out of search engines.
+[[headers]]
+  for = "/*"
+  [headers.values]
+    X-Robots-Tag = "noindex, nofollow"
+    Referrer-Policy = "no-referrer"
+
+# Each portal has its own address (/admin, /garage, /parts); the app reads
+# the path, so every address serves the same page.
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200

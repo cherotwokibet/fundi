@@ -30,6 +30,8 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
+  flutter_web_plugins:
+    sdk: flutter
 
   # The following adds the Cupertino Icons font to your application.
   # Use with the CupertinoIcons class for iOS style icons.
@@ -42,6 +44,7 @@ dependencies:
   record: ^7.1.2
   cross_file: ^0.3.5+5
   path_provider: ^2.1.6
+  audioplayers: ^6.8.1
 dev_dependencies:
   flutter_test:
     sdk: flutter
@@ -63,6 +66,13 @@ flutter:
   # included with your application, so that you can use the icons in
   # the material Icons class.
   uses-material-design: true
+
+  # Headings. Inter Tight, SIL Open Font License (see assets/fonts).
+  fonts:
+    - family: InterTight
+      fonts:
+        - asset: assets/fonts/InterTight-ExtraBold.ttf
+          weight: 800
 
   # To add assets to your application, add an assets section, like this:
   # assets:
