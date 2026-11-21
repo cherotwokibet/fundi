@@ -837,12 +837,24 @@ void main() {
       await tester.tap(find.byKey(const Key('call-shop-part2')));
       expect(dialed, [SampleDirectory.shopPhone]);
 
+      await tester.ensureVisible(
+        find.byKey(const Key('add-part2'), skipOffstage: false),
+      );
+      await tester.pumpAndSettle();
       await tester.tap(find.byKey(const Key('add-part2')));
+      await tester.pumpAndSettle();
+      await tester.ensureVisible(
+        find.byKey(const Key('add-part2'), skipOffstage: false),
+      );
       await tester.pumpAndSettle();
       await tester.tap(find.byKey(const Key('add-part2')));
       await tester.pumpAndSettle();
       expect(find.text('Added (2)'), findsOneWidget);
       // Only 2 in stock: no third.
+      await tester.ensureVisible(
+        find.byKey(const Key('add-part2'), skipOffstage: false),
+      );
+      await tester.pumpAndSettle();
       await tester.tap(find.byKey(const Key('add-part2')));
       await tester.pumpAndSettle();
       expect(find.text('Only 2 in stock.'), findsOneWidget);
@@ -893,6 +905,10 @@ void main() {
       await tester.tap(find.byKey(const Key('open-parts')));
       await tester.pumpAndSettle();
 
+      await tester.ensureVisible(
+        find.byKey(const Key('add-part1'), skipOffstage: false),
+      );
+      await tester.pumpAndSettle();
       await tester.tap(find.byKey(const Key('add-part1')));
       await tester.pumpAndSettle();
       await tester.dragUntilVisible(
@@ -900,7 +916,9 @@ void main() {
         find.byKey(const Key('parts-results')),
         const Offset(0, -150),
       );
-      await tester.ensureVisible(find.byKey(const Key('add-part3')));
+      await tester.ensureVisible(
+        find.byKey(const Key('add-part3'), skipOffstage: false),
+      );
       await tester.pumpAndSettle();
       await tester.tap(find.byKey(const Key('add-part3')));
       await tester.pumpAndSettle();
@@ -913,7 +931,9 @@ void main() {
         find.byKey(const Key('parts-results')),
         const Offset(0, 150),
       );
-      await tester.ensureVisible(find.byKey(const Key('add-part9')));
+      await tester.ensureVisible(
+        find.byKey(const Key('add-part9'), skipOffstage: false),
+      );
       await tester.pumpAndSettle();
       await tester.tap(find.byKey(const Key('add-part9')));
       await tester.pumpAndSettle();
@@ -997,13 +1017,13 @@ void main() {
       await signIn(tester, '0711 000 002');
       expect(find.text('Sample: Kirinyaga Road Spares'), findsOneWidget);
       expect(find.text(buyer.name), findsOneWidget);
-      expect(find.text('Orders (1 new)'), findsOneWidget);
+      expect(find.text('1 new order to confirm'), findsOneWidget);
       final order = dir.orders.single.order;
       await tester.tap(find.byKey(Key('order-next-${order.id}')));
       await tester.pumpAndSettle();
-      expect(find.text('Confirmed by the shop'), findsOneWidget);
+      expect(find.byKey(Key('group-preparing-${order.id}')), findsOneWidget);
       expect(dir.orders.single.order.status, OrderStatus.confirmed);
-      expect(find.text('Orders'), findsOneWidget);
+      expect(find.text('1 new order to confirm'), findsNothing);
 
       // A new order shows up by itself while the shop has the screen open.
       await mechanicParts.placeOrder(
@@ -1013,7 +1033,7 @@ void main() {
       );
       await tester.pump(ShopScreen.checkEvery);
       await tester.pumpAndSettle();
-      expect(find.text('Orders (1 new)'), findsOneWidget);
+      expect(find.text('1 new order to confirm'), findsOneWidget);
       expect(find.text('2 × Engine oil 5W-30, 4 litres'), findsOneWidget);
 
       await tester.tap(find.byKey(const Key('shop-tab-parts')));
@@ -1043,6 +1063,55 @@ void main() {
       // The mechanic can now find it.
       final found = await mechanicParts.search(query: 'shock', make: 'nissan');
       expect(found.single.priceKes, 6500);
+    });
+
+    testWidgets('a quick search button finds that kind of part', (
+      tester,
+    ) async {
+      await pumpApp(tester, portal: Portal.garage);
+      await signIn(tester, '0711 000 001');
+      await tester.ensureVisible(find.byKey(const Key('open-parts')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('open-parts')));
+      await tester.pumpAndSettle();
+      expect(find.textContaining('Engine oil'), findsOneWidget);
+      await tester.tap(find.byKey(const Key('parts-shortcut-brake')));
+      await tester.pumpAndSettle();
+      expect(find.text('Front brake pads'), findsOneWidget);
+      expect(find.textContaining('Engine oil'), findsNothing);
+    });
+
+    testWidgets('a parts shop on a laptop sees orders in columns and what '
+        'is running low', (tester) async {
+      await pumpApp(tester, portal: Portal.parts);
+      tester.view.physicalSize = const Size(1440, 900);
+      tester.view.devicePixelRatio = 1;
+      await tester.pumpAndSettle();
+      final dir = account.directory;
+      final mechanicParts = SamplePartsRepository(
+        dir,
+        () => SampleDirectory.mechanicPhone,
+      );
+      dir.claim(SampleDirectory.mechanicPhone);
+      final buyer = dir.listingOwnedBy(SampleDirectory.mechanicPhone)!;
+      await mechanicParts.placeOrder(
+        buyerId: buyer.id,
+        lines: [(partId: 'part1', qty: 1)],
+      );
+      await signIn(tester, '0711 000 002');
+      final order = dir.orders.single.order;
+      Finder inColumn(String col) => find.descendant(
+        of: find.byKey(Key('shop-col-$col')),
+        matching: find.byKey(Key('order-${order.id}')),
+      );
+      expect(inColumn('new'), findsOneWidget);
+      expect(find.byKey(const Key('kpi-new')), findsOneWidget);
+      // The alternator has only 2 left.
+      expect(find.byKey(const Key('low-part2')), findsOneWidget);
+      await tester.tap(find.byKey(Key('order-next-${order.id}')));
+      await tester.pumpAndSettle();
+      expect(inColumn('new'), findsNothing);
+      expect(inColumn('preparing'), findsOneWidget);
     });
 
     testWidgets('admin adds a shop worker, who signs in to the shop', (

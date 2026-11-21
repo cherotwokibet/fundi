@@ -124,60 +124,79 @@ class _MarketState extends ConsumerState<PartsMarketScreen> {
     }
   }
 
+  /// Quick searches for the parts asked for most.
+  static const _shortcuts = [
+    ('Brakes', 'brake'),
+    ('Filters', 'filter'),
+    ('Battery', 'battery'),
+    ('Oil', 'oil'),
+  ];
+
+  void _shortcut(String word) {
+    query.text = word;
+    _search();
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      backgroundColor: consolePage,
       bottomNavigationBar: basket.isEmpty
           ? null
           : SafeArea(
               child: Padding(
-                padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
-                child: FilledButton(
-                  key: const Key('basket-review'),
-                  style: FilledButton.styleFrom(
-                    minimumSize: const Size.fromHeight(54),
-                  ),
-                  onPressed: _review,
-                  child: Text(
-                    'Review order · $basketCount '
-                    '${basketCount == 1 ? 'part' : 'parts'} · ${kes(basketTotal)}',
+                padding: const EdgeInsets.fromLTRB(12, 8, 12, 12),
+                child: Align(
+                  heightFactor: 1,
+                  child: ConstrainedBox(
+                    constraints: const BoxConstraints(maxWidth: 760),
+                    child: _BasketBar(
+                      shop: basketShop!,
+                      summary:
+                          '$basketCount ${basketCount == 1 ? 'part' : 'parts'} · ${kes(basketTotal)}',
+                      count: basketCount,
+                      onReview: _review,
+                    ),
                   ),
                 ),
               ),
             ),
       appBar: AppBar(
+        backgroundColor: consolePage,
         title: const Text('Spare parts'),
         actions: [
           if (buyer != null)
-            TextButton(
+            TextButton.icon(
               key: const Key('parts-my-orders'),
               onPressed: () => Navigator.of(context).push(
                 MaterialPageRoute<void>(
                   builder: (_) => BuyerOrdersScreen(access: widget.access),
                 ),
               ),
-              child: const Text('My orders'),
+              icon: const Icon(Icons.receipt_long_outlined),
+              label: const Text('My orders'),
             ),
         ],
       ),
       body: ContentWidth(
         max: 760,
         child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             Padding(
               padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
               child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
                   TextField(
                     key: const Key('parts-search'),
                     controller: query,
                     textInputAction: TextInputAction.search,
                     onSubmitted: (_) => _search(),
-                    decoration: const InputDecoration(
-                      labelText: 'Part name or number',
-                      hintText: 'Brake pads, 04465-52180',
-                      prefixIcon: Icon(Icons.search),
-                      border: OutlineInputBorder(),
+                    decoration: _field(
+                      'Part name or number',
+                      'Brake pads, 04465-52180',
+                      icon: Icons.search,
                     ),
                   ),
                   const SizedBox(height: 8),
@@ -189,23 +208,46 @@ class _MarketState extends ConsumerState<PartsMarketScreen> {
                           controller: make,
                           textCapitalization: TextCapitalization.words,
                           onSubmitted: (_) => _search(),
-                          decoration: const InputDecoration(
-                            labelText: 'Car make (optional)',
-                            hintText: 'Toyota',
-                            border: OutlineInputBorder(),
+                          decoration: _field(
+                            'Car make (optional)',
+                            'Toyota',
+                            icon: Icons.directions_car_outlined,
                           ),
                         ),
                       ),
                       const SizedBox(width: 8),
-                      FilledButton(
-                        key: const Key('parts-search-go'),
-                        onPressed: _search,
-                        style: FilledButton.styleFrom(
-                          minimumSize: const Size(96, 56),
+                      SizedBox(
+                        width: 104,
+                        child: BigButton(
+                          key: const Key('parts-search-go'),
+                          kind: ButtonKind.forest,
+                          label: 'Search',
+                          onPressed: _search,
                         ),
-                        child: const Text('Search'),
                       ),
                     ],
+                  ),
+                  const SizedBox(height: 10),
+                  SingleChildScrollView(
+                    scrollDirection: Axis.horizontal,
+                    child: Row(
+                      children: [
+                        for (final (label, word) in _shortcuts)
+                          Padding(
+                            padding: const EdgeInsets.only(right: 8),
+                            child: ActionChip(
+                              key: Key('parts-shortcut-$word'),
+                              label: Text(label),
+                              backgroundColor: Colors.white,
+                              side: const BorderSide(color: hairline),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(99),
+                              ),
+                              onPressed: () => _shortcut(word),
+                            ),
+                          ),
+                      ],
+                    ),
                   ),
                   if (buyer == null)
                     const Padding(
@@ -259,13 +301,22 @@ class _MarketState extends ConsumerState<PartsMarketScreen> {
                   return ListView.separated(
                     key: const Key('parts-results'),
                     padding: const EdgeInsets.fromLTRB(16, 4, 16, 24),
-                    itemCount: list.length,
+                    itemCount: list.length + 1,
                     separatorBuilder: (_, _) => const SizedBox(height: 10),
-                    itemBuilder: (_, i) => _PartCard(
-                      part: list[i],
-                      inBasket: basket[list[i].id]?.qty ?? 0,
-                      onOrder: buyer == null ? null : () => _add(list[i]),
-                    ),
+                    itemBuilder: (_, i) => i == 0
+                        ? Text(
+                            '${list.length} ${list.length == 1 ? 'part' : 'parts'} in stock'
+                            '${make.text.trim().isEmpty ? '' : ' for ${make.text.trim()}'}',
+                            key: const Key('parts-count'),
+                            style: const TextStyle(color: muted, fontSize: 13),
+                          )
+                        : _PartCard(
+                            part: list[i - 1],
+                            inBasket: basket[list[i - 1].id]?.qty ?? 0,
+                            onOrder: buyer == null
+                                ? null
+                                : () => _add(list[i - 1]),
+                          ),
                   );
                 },
               ),
@@ -275,6 +326,96 @@ class _MarketState extends ConsumerState<PartsMarketScreen> {
       ),
     );
   }
+}
+
+InputDecoration _field(String label, String hint, {IconData? icon}) =>
+    InputDecoration(
+      labelText: label,
+      hintText: hint,
+      prefixIcon: icon == null ? null : Icon(icon),
+      filled: true,
+      fillColor: Colors.white,
+      border: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(14),
+        borderSide: const BorderSide(color: hairline),
+      ),
+      enabledBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(14),
+        borderSide: const BorderSide(color: hairline),
+      ),
+    );
+
+/// The order being put together: one shop, how many parts, the total.
+class _BasketBar extends StatelessWidget {
+  const _BasketBar({
+    required this.shop,
+    required this.summary,
+    required this.count,
+    required this.onReview,
+  });
+  final String shop;
+  final String summary;
+  final int count;
+  final VoidCallback onReview;
+
+  @override
+  Widget build(BuildContext context) => Container(
+    padding: const EdgeInsets.fromLTRB(14, 10, 10, 10),
+    decoration: BoxDecoration(
+      color: forest,
+      borderRadius: BorderRadius.circular(18),
+    ),
+    child: Row(
+      children: [
+        Container(
+          width: 32,
+          height: 32,
+          alignment: Alignment.center,
+          decoration: const BoxDecoration(color: lime, shape: BoxShape.circle),
+          child: Text(
+            '$count',
+            style: const TextStyle(color: forest, fontWeight: FontWeight.w800),
+          ),
+        ),
+        const SizedBox(width: 10),
+        Expanded(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                shop,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(color: Color(0xFFCFDCD4), fontSize: 12),
+              ),
+              Text(
+                summary,
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(width: 8),
+        FilledButton(
+          key: const Key('basket-review'),
+          style: FilledButton.styleFrom(
+            backgroundColor: lime,
+            foregroundColor: forest,
+            minimumSize: const Size(0, 48),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(12),
+            ),
+          ),
+          onPressed: onReview,
+          child: const Text('Review order'),
+        ),
+      ],
+    ),
+  );
 }
 
 class _PartCard extends ConsumerWidget {
@@ -294,91 +435,118 @@ class _PartCard extends ConsumerWidget {
     final p = part;
     final where = [
       p.shopName,
-      p.shopArea,
       if (p.distanceKm != null) '${p.distanceKm!.toStringAsFixed(1)} km',
+      '${p.stockQty} in stock',
     ].where((s) => s.isNotEmpty).join(' · ');
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(14),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                if (p.photoPath != null) ...[
-                  PartPhoto(p.photoPath!),
-                  const SizedBox(width: 12),
-                ],
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        p.title,
-                        style: const TextStyle(
-                          fontSize: 17,
-                          fontWeight: FontWeight.w700,
-                        ),
-                      ),
-                      Text(p.fitment),
-                      Text(
-                        [
-                          p.condition.label,
-                          if (p.partNumber != null && p.partNumber!.isNotEmpty)
-                            'No. ${p.partNumber}',
-                          '${p.stockQty} in stock',
-                        ].join(' · '),
-                        style: const TextStyle(fontSize: 13, color: muted),
-                      ),
-                    ],
-                  ),
-                ),
-                const SizedBox(width: 8),
-                Text(
-                  kes(p.priceKes),
-                  style: const TextStyle(
-                    fontSize: 17,
-                    fontWeight: FontWeight.w800,
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 6),
-            Text(where, style: const TextStyle(fontSize: 13, color: muted)),
-            const SizedBox(height: 10),
-            Row(
-              children: [
-                Expanded(
-                  child: OutlinedButton.icon(
-                    key: Key('call-shop-${p.id}'),
-                    style: OutlinedButton.styleFrom(
-                      minimumSize: const Size.fromHeight(48),
-                    ),
-                    onPressed: () => ref.read(dialerProvider)(p.shopPhone),
-                    icon: const Icon(Icons.call),
-                    label: const Text('Call shop'),
-                  ),
-                ),
-                if (onOrder != null) ...[
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: FilledButton(
-                      key: Key('add-${p.id}'),
-                      style: FilledButton.styleFrom(
-                        minimumSize: const Size.fromHeight(48),
-                      ),
-                      onPressed: onOrder,
-                      child: Text(
-                        inBasket == 0 ? 'Add to order' : 'Added ($inBasket)',
-                      ),
-                    ),
-                  ),
-                ],
-              ],
-            ),
-          ],
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(
+          color: inBasket > 0 ? forest : hairline,
+          width: inBasket > 0 ? 1.5 : 1,
         ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              if (p.photoPath != null)
+                PartPhoto(p.photoPath!, size: 56)
+              else
+                Container(
+                  width: 56,
+                  height: 56,
+                  decoration: BoxDecoration(
+                    color: tint,
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: const Icon(Icons.settings_outlined, color: forest),
+                ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      p.title,
+                      style: const TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                    Text(
+                      where,
+                      style: const TextStyle(fontSize: 13, color: muted),
+                    ),
+                    Text(
+                      [
+                        p.fitment,
+                        p.condition.label,
+                        if (p.partNumber != null && p.partNumber!.isNotEmpty)
+                          'No. ${p.partNumber}',
+                      ].join(' · '),
+                      style: const TextStyle(fontSize: 13, color: muted),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 8),
+              Text(
+                kes(p.priceKes),
+                style: const TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.w800,
+                  fontFeatures: [FontFeature.tabularFigures()],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          Row(
+            children: [
+              Expanded(
+                child: OutlinedButton.icon(
+                  key: Key('call-shop-${p.id}'),
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: forest,
+                    minimumSize: const Size.fromHeight(48),
+                    side: const BorderSide(color: hairline),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                  ),
+                  onPressed: () => ref.read(dialerProvider)(p.shopPhone),
+                  icon: const Icon(Icons.call, size: 18),
+                  label: const Text('Call shop'),
+                ),
+              ),
+              if (onOrder != null) ...[
+                const SizedBox(width: 10),
+                Expanded(
+                  child: FilledButton(
+                    key: Key('add-${p.id}'),
+                    style: FilledButton.styleFrom(
+                      backgroundColor: inBasket == 0 ? lime : forest,
+                      foregroundColor: inBasket == 0 ? forest : Colors.white,
+                      minimumSize: const Size.fromHeight(48),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                    ),
+                    onPressed: onOrder,
+                    child: Text(
+                      inBasket == 0 ? 'Add to order' : 'Added ($inBasket)',
+                    ),
+                  ),
+                ),
+              ],
+            ],
+          ),
+        ],
       ),
     );
   }
@@ -616,7 +784,11 @@ class _BuyerOrdersState extends ConsumerState<BuyerOrdersScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('My parts orders')),
+      backgroundColor: consolePage,
+      appBar: AppBar(
+        backgroundColor: consolePage,
+        title: const Text('My parts orders'),
+      ),
       body: ContentWidth(
         child: FutureBuilder<List<PartsOrder>>(
           future: rows,
@@ -666,82 +838,174 @@ class OrderCard extends ConsumerWidget {
     required this.order,
     required this.who,
     required this.phone,
+    this.subtitle,
+    this.showStatus = true,
     this.actions = const [],
   });
   final PartsOrder order;
   final String who;
   final String phone;
+
+  /// Under the name; the time and status when not given.
+  final String? subtitle;
+
+  /// Off where the order's group already says where it stands.
+  final bool showStatus;
   final List<Widget> actions;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final o = order;
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(14),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                Expanded(
-                  child: Text(
-                    who,
-                    style: const TextStyle(
-                      fontSize: 17,
-                      fontWeight: FontWeight.w700,
-                    ),
+    final initials = who
+        .replaceFirst('Sample: ', '')
+        .split(RegExp(r'\s+'))
+        .where((w) => w.isNotEmpty)
+        .take(2)
+        .map((w) => w[0].toUpperCase())
+        .join();
+    const money = TextStyle(
+      fontWeight: FontWeight.w600,
+      fontFeatures: [FontFeature.tabularFigures()],
+    );
+    return Container(
+      key: Key('order-${o.id}'),
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: hairline),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            children: [
+              Container(
+                width: 40,
+                height: 40,
+                alignment: Alignment.center,
+                decoration: const BoxDecoration(
+                  color: tint,
+                  shape: BoxShape.circle,
+                ),
+                child: Text(
+                  initials,
+                  style: const TextStyle(
+                    color: forest,
+                    fontWeight: FontWeight.w800,
                   ),
                 ),
-                Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 10,
-                    vertical: 4,
-                  ),
-                  decoration: BoxDecoration(
-                    color: o.status.isOpen ? lime : tint,
-                    borderRadius: BorderRadius.circular(14),
-                  ),
-                  child: Text(
-                    o.status.label,
-                    style: const TextStyle(
-                      fontWeight: FontWeight.w700,
-                      fontSize: 13,
-                    ),
-                  ),
-                ),
-              ],
-            ),
-            Text(
-              '${clockText(o.createdAt)} · ${kes(o.totalKes)}',
-              style: const TextStyle(fontSize: 13, color: muted),
-            ),
-            const SizedBox(height: 6),
-            for (final i in o.items) Text('${i.qty} × ${i.title}'),
-            if (o.note != null) ...[
-              const SizedBox(height: 4),
-              Text(
-                '"${o.note}"',
-                style: const TextStyle(fontStyle: FontStyle.italic),
               ),
-            ],
-            const SizedBox(height: 6),
-            Wrap(
-              spacing: 8,
-              runSpacing: 4,
-              crossAxisAlignment: WrapCrossAlignment.center,
-              children: [
-                if (phone.isNotEmpty)
-                  TextButton.icon(
-                    onPressed: () => ref.read(dialerProvider)(phone),
-                    icon: const Icon(Icons.call, size: 18),
-                    label: const Text('Call'),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      who,
+                      style: const TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                    Text(
+                      subtitle ?? 'Ordered ${agoText(o.createdAt)}',
+                      style: const TextStyle(fontSize: 13, color: muted),
+                    ),
+                  ],
+                ),
+              ),
+              if (phone.isNotEmpty)
+                IconButton.filledTonal(
+                  key: Key('call-order-${o.id}'),
+                  tooltip: 'Call $who',
+                  style: IconButton.styleFrom(
+                    backgroundColor: tint,
+                    foregroundColor: forest,
                   ),
-                ...actions,
-              ],
+                  onPressed: () => ref.read(dialerProvider)(phone),
+                  icon: const Icon(Icons.call, size: 20),
+                ),
+            ],
+          ),
+          if (showStatus) ...[
+            const SizedBox(height: 8),
+            Align(
+              alignment: Alignment.centerLeft,
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 3),
+                decoration: BoxDecoration(
+                  color: switch (o.status) {
+                    OrderStatus.placed => lime,
+                    OrderStatus.confirmed => infoFill,
+                    OrderStatus.ready => warnFill,
+                    _ => tint,
+                  },
+                  borderRadius: BorderRadius.circular(99),
+                ),
+                child: Text(
+                  o.status.label,
+                  style: const TextStyle(
+                    fontWeight: FontWeight.w700,
+                    fontSize: 12,
+                    color: forest,
+                  ),
+                ),
+              ),
             ),
           ],
-        ),
+          const SizedBox(height: 4),
+          for (final i in o.items)
+            Container(
+              padding: const EdgeInsets.symmetric(vertical: 8),
+              decoration: const BoxDecoration(
+                border: Border(bottom: BorderSide(color: Color(0xFFEEF0EC))),
+              ),
+              child: Row(
+                children: [
+                  Expanded(child: Text('${i.qty} × ${i.title}')),
+                  const SizedBox(width: 8),
+                  Text(kes(i.qty * i.unitPriceKes), style: money),
+                ],
+              ),
+            ),
+          Padding(
+            padding: const EdgeInsets.only(top: 8),
+            child: Row(
+              children: [
+                const Expanded(
+                  child: Text(
+                    'Total',
+                    style: TextStyle(fontWeight: FontWeight.w800),
+                  ),
+                ),
+                Text(
+                  kes(o.totalKes),
+                  style: money.copyWith(
+                    fontWeight: FontWeight.w800,
+                    fontSize: 16,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          if (o.note != null) ...[
+            const SizedBox(height: 6),
+            Text(
+              '"${o.note}"',
+              style: const TextStyle(fontStyle: FontStyle.italic, color: muted),
+            ),
+          ],
+          if (actions.isNotEmpty) ...[
+            const SizedBox(height: 10),
+            Wrap(
+              spacing: 8,
+              runSpacing: 6,
+              crossAxisAlignment: WrapCrossAlignment.center,
+              children: actions,
+            ),
+          ],
+        ],
       ),
     );
   }

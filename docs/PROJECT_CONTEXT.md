@@ -80,7 +80,22 @@ replaces the old inbox screen):
   the money waiting for owners and approved.
 Left out on purpose: the answer countdown and "Arrived" step (not tracked yet),
 team members per job (garages have no staff assignment yet), and a bottom tab bar.
-66 Flutter tests.
+
+**Parts portal rebuilt (21 Nov 2026)** (same rules and order steps):
+- Shop, phone: orders grouped as New not confirmed, Getting ready, Ready for pickup,
+  then Running low (active parts with 2 or fewer left) and Done recently. Each order
+  card has the buyer, a call button, the lines with amounts, the total, and one big
+  next step (Confirm order, Ready to collect, Mark collected) plus "Can't supply it".
+  Bottom bar: Orders (with a count) and Our parts.
+- Shop, laptop (1000 px and wider): forest sidebar, four numbers (new, to get ready,
+  waiting for pickup, collected in the last 7 days), the three order columns, and
+  Running low and Done recently on the right.
+- Our parts: one list with stock and Hidden tags and a "List a part" button.
+- Mechanic's parts search: white search fields, quick buttons (Brakes, Filters,
+  Battery, Oil), cards with price and stock, and a forest order bar at the bottom.
+Left out on purpose: a pickup time choice on confirm (no field for it yet), car
+chips saved per mechanic, and the shop workers and details pages (our team runs those).
+68 Flutter tests.
 
 ## Separate portal links (20 Nov 2026, evening)
 

@@ -15,6 +15,15 @@ String _friendly(Object e) => e is AccountException
     ? e.message
     : 'Something went wrong. Check your connection and try again.';
 
+/// From this width a shop sees a sidebar and its orders in columns.
+const shopBoardBreakpoint = 1000.0;
+
+const _onForest = Color(0xFFCFDCD4);
+const _column = Color(0xFFECEBE5);
+
+/// A part counts as running low at this many left.
+const lowStockAt = 2;
+
 /// A parts shop's own screen: orders from garages and mechanics, and the
 /// shop's parts. Owners and workers see the same thing; our team manages
 /// who works here.
@@ -37,6 +46,9 @@ class _ShopState extends ConsumerState<ShopScreen> {
 
   /// Orders still waiting for the shop to confirm them.
   int waiting = 0;
+
+  /// 0: orders, 1: our parts.
+  int tab = 0;
 
   @override
   void initState() {
@@ -90,143 +102,805 @@ class _ShopState extends ConsumerState<ShopScreen> {
     if (saved == true && mounted) _reload();
   }
 
+  Future<void> _signOut() async {
+    await ref.read(accountProvider).signOut();
+    ref.read(accountVersionProvider.notifier).bump();
+    if (mounted) Navigator.of(context).popUntil((r) => r.isFirst);
+  }
+
+  List<Widget> _actions(PartsOrder o) => [
+    if (o.status.shopNext case final next?)
+      BigButton(
+        key: Key('order-next-${o.id}'),
+        kind: next == OrderStatus.confirmed
+            ? ButtonKind.lime
+            : ButtonKind.forest,
+        label: switch (next) {
+          OrderStatus.confirmed => 'Confirm order',
+          OrderStatus.ready => 'Ready to collect',
+          _ => 'Mark collected',
+        },
+        onPressed: () => _move(o, next),
+      ),
+    if (o.status.isOpen)
+      TextButton(
+        key: Key('order-cancel-${o.id}'),
+        style: TextButton.styleFrom(
+          foregroundColor: muted,
+          minimumSize: const Size(0, 48),
+        ),
+        onPressed: () => _move(o, OrderStatus.cancelled),
+        child: Text(
+          o.status == OrderStatus.placed ? "Can't supply it" : 'Cancel',
+        ),
+      ),
+  ];
+
+  String get _ordersLine => waiting == 0
+      ? 'New orders also come to the shop phone as a text.'
+      : waiting == 1
+      ? '1 new order to confirm'
+      : '$waiting new orders to confirm';
+
+  Widget _body({required bool wide}) {
+    if (tab == 1) {
+      return _Loaded<List<PartListing>>(
+        future: parts,
+        builder: (list) =>
+            _PartsPanel(parts: list, wide: wide, onAdd: _edit, onEdit: _edit),
+      );
+    }
+    return _Loaded<List<PartsOrder>>(
+      future: orders,
+      builder: (list) => FutureBuilder<List<PartListing>>(
+        future: parts,
+        builder: (_, p) => _OrdersPanel(
+          orders: list,
+          parts: p.data ?? const [],
+          wide: wide,
+          line: _ordersLine,
+          actions: _actions,
+          onEditPart: _edit,
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
-    return DefaultTabController(
-      length: 2,
-      child: Scaffold(
-        appBar: AppBar(
-          title: Text(widget.shopName),
-          actions: [
-            TextButton(
-              onPressed: () async {
-                await ref.read(accountProvider).signOut();
-                ref.read(accountVersionProvider.notifier).bump();
-                if (context.mounted) {
-                  Navigator.of(context).popUntil((r) => r.isFirst);
-                }
-              },
-              child: const Text('Sign out'),
+    return LayoutBuilder(
+      builder: (context, c) {
+        if (c.maxWidth >= shopBoardBreakpoint) {
+          return Scaffold(
+            backgroundColor: consolePage,
+            body: Row(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                _Sidebar(
+                  shopName: widget.shopName,
+                  waiting: waiting,
+                  tab: tab,
+                  onTab: (i) => setState(() => tab = i),
+                  onSignOut: _signOut,
+                ),
+                Expanded(child: _body(wide: true)),
+              ],
             ),
-          ],
-          bottom: TabBar(
-            tabs: [
-              Tab(
-                key: const Key('shop-tab-orders'),
-                text: waiting == 0 ? 'Orders' : 'Orders ($waiting new)',
-              ),
-              const Tab(key: Key('shop-tab-parts'), text: 'Our parts'),
+          );
+        }
+        return Scaffold(
+          backgroundColor: consolePage,
+          appBar: AppBar(
+            backgroundColor: consolePage,
+            title: Text(widget.shopName),
+            actions: [
+              TextButton(onPressed: _signOut, child: const Text('Sign out')),
             ],
           ),
-        ),
-        floatingActionButton: FloatingActionButton.extended(
-          key: const Key('add-part'),
-          onPressed: _edit,
-          icon: const Icon(Icons.add),
-          label: const Text('Add a part'),
-        ),
-        body: ContentWidth(
-          max: 760,
-          child: TabBarView(
-            children: [
-              _FutureList<PartsOrder>(
-                future: orders,
-                empty: 'No orders yet. Garages and mechanics see your parts as soon as you add them.',
-                item: (o) => OrderCard(
-                  order: o,
-                  who: o.buyerName,
-                  phone: o.buyerPhone,
-                  actions: [
-                    if (o.status.shopNext case final next?)
-                      FilledButton(
-                        key: Key('order-next-${o.id}'),
-                        onPressed: () => _move(o, next),
-                        child: Text(switch (next) {
-                          OrderStatus.confirmed => 'Confirm order',
-                          OrderStatus.ready => 'Ready to collect',
-                          _ => 'Mark collected',
-                        }),
-                      ),
-                    if (o.status.isOpen)
-                      TextButton(
-                        key: Key('order-cancel-${o.id}'),
-                        onPressed: () => _move(o, OrderStatus.cancelled),
-                        child: const Text('Cancel'),
-                      ),
-                  ],
+          bottomNavigationBar: NavigationBar(
+            selectedIndex: tab,
+            backgroundColor: Colors.white,
+            indicatorColor: lime,
+            onDestinationSelected: (i) => setState(() => tab = i),
+            destinations: [
+              NavigationDestination(
+                key: const Key('shop-tab-orders'),
+                icon: Badge(
+                  isLabelVisible: waiting > 0,
+                  label: Text('$waiting'),
+                  child: const Icon(Icons.receipt_long_outlined),
                 ),
+                label: 'Orders',
               ),
-              _FutureList<PartListing>(
-                future: parts,
-                empty: 'No parts yet. Tap "Add a part".',
-                item: (p) => Card(
-                  child: ListTile(
-                    key: Key('shop-part-${p.id}'),
-                    leading: p.photoPath == null
-                        ? const Icon(Icons.inventory_2_outlined)
-                        : PartPhoto(p.photoPath!, size: 44),
-                    title: Text(
-                      p.title,
-                      style: const TextStyle(fontWeight: FontWeight.w700),
-                    ),
-                    subtitle: Text(
-                      '${kes(p.priceKes)} · ${p.stockQty} in stock'
-                      '${p.active ? '' : ' · Hidden'}\n${p.fitment}',
-                    ),
-                    isThreeLine: true,
-                    trailing: const Icon(Icons.edit_outlined),
-                    onTap: () => _edit(p),
+              const NavigationDestination(
+                key: Key('shop-tab-parts'),
+                icon: Icon(Icons.inventory_2_outlined),
+                label: 'Our parts',
+              ),
+            ],
+          ),
+          body: ContentWidth(max: 760, child: _body(wide: false)),
+        );
+      },
+    );
+  }
+}
+
+/// Waits for a list once; a background refresh keeps showing the last one.
+class _Loaded<T> extends StatelessWidget {
+  const _Loaded({required this.future, required this.builder});
+  final Future<T> future;
+  final Widget Function(T) builder;
+
+  @override
+  Widget build(BuildContext context) => FutureBuilder<T>(
+    future: future,
+    builder: (context, snap) {
+      if (!snap.hasData && snap.connectionState != ConnectionState.done) {
+        return const Center(child: CircularProgressIndicator());
+      }
+      if (snap.hasError) {
+        return Center(child: Text(_friendly(snap.error!)));
+      }
+      return builder(snap.data as T);
+    },
+  );
+}
+
+class _Sidebar extends StatelessWidget {
+  const _Sidebar({
+    required this.shopName,
+    required this.waiting,
+    required this.tab,
+    required this.onTab,
+    required this.onSignOut,
+  });
+  final String shopName;
+  final int waiting;
+  final int tab;
+  final ValueChanged<int> onTab;
+  final VoidCallback onSignOut;
+
+  @override
+  Widget build(BuildContext context) => Container(
+    width: 240,
+    color: forest,
+    padding: const EdgeInsets.fromLTRB(14, 20, 14, 16),
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        const Row(
+          children: [
+            Text(
+              'fundi',
+              style: TextStyle(
+                color: Colors.white,
+                fontSize: 22,
+                fontWeight: FontWeight.w800,
+              ),
+            ),
+            SizedBox(width: 6),
+            Text(
+              'parts',
+              style: TextStyle(color: lime, fontWeight: FontWeight.w700),
+            ),
+          ],
+        ),
+        const SizedBox(height: 14),
+        Text(shopName, style: const TextStyle(color: _onForest, fontSize: 13)),
+        const SizedBox(height: 16),
+        for (final (i, label, icon, count, key) in [
+          (
+            0,
+            'Orders',
+            Icons.receipt_long_outlined,
+            waiting,
+            'shop-tab-orders',
+          ),
+          (1, 'Our parts', Icons.inventory_2_outlined, 0, 'shop-tab-parts'),
+        ])
+          Padding(
+            padding: const EdgeInsets.only(bottom: 4),
+            child: Material(
+              color: tab == i
+                  ? Colors.white.withValues(alpha: 0.12)
+                  : Colors.transparent,
+              borderRadius: BorderRadius.circular(10),
+              child: InkWell(
+                key: Key(key),
+                borderRadius: BorderRadius.circular(10),
+                onTap: () => onTab(i),
+                child: SizedBox(
+                  height: 42,
+                  child: Row(
+                    children: [
+                      const SizedBox(width: 12),
+                      Icon(icon, size: 20, color: tab == i ? lime : _onForest),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: Text(
+                          label,
+                          style: TextStyle(
+                            color: tab == i ? Colors.white : _onForest,
+                            fontWeight: tab == i
+                                ? FontWeight.w700
+                                : FontWeight.w500,
+                          ),
+                        ),
+                      ),
+                      if (count > 0)
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 7,
+                            vertical: 2,
+                          ),
+                          decoration: BoxDecoration(
+                            color: lime,
+                            borderRadius: BorderRadius.circular(99),
+                          ),
+                          child: Text(
+                            '$count',
+                            style: const TextStyle(
+                              color: forest,
+                              fontSize: 12,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                        ),
+                      const SizedBox(width: 10),
+                    ],
                   ),
                 ),
               ),
-            ],
+            ),
+          ),
+        const Spacer(),
+        TextButton.icon(
+          style: TextButton.styleFrom(
+            foregroundColor: _onForest,
+            alignment: Alignment.centerLeft,
+          ),
+          onPressed: onSignOut,
+          icon: const Icon(Icons.logout, size: 18),
+          label: const Text('Sign out'),
+        ),
+      ],
+    ),
+  );
+}
+
+class _Group extends StatelessWidget {
+  const _Group(this.title, this.count);
+  final String title;
+  final int count;
+
+  @override
+  Widget build(BuildContext context) => Row(
+    children: [
+      Expanded(
+        child: Text(
+          title,
+          style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w800),
+        ),
+      ),
+      Container(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(99),
+          border: Border.all(color: hairline),
+        ),
+        child: Text(
+          '$count',
+          style: const TextStyle(
+            fontSize: 12,
+            fontWeight: FontWeight.w700,
+            color: muted,
           ),
         ),
+      ),
+    ],
+  );
+}
+
+/// Orders by where they stand: new, getting ready, waiting for pickup.
+class _OrdersPanel extends StatelessWidget {
+  const _OrdersPanel({
+    required this.orders,
+    required this.parts,
+    required this.wide,
+    required this.line,
+    required this.actions,
+    required this.onEditPart,
+  });
+  final List<PartsOrder> orders;
+  final List<PartListing> parts;
+  final bool wide;
+  final String line;
+  final List<Widget> Function(PartsOrder) actions;
+  final void Function(PartListing) onEditPart;
+
+  @override
+  Widget build(BuildContext context) {
+    List<PartsOrder> by(OrderStatus s) => [
+      for (final o in orders)
+        if (o.status == s) o,
+    ];
+    final fresh = by(OrderStatus.placed);
+    final preparing = by(OrderStatus.confirmed);
+    final ready = by(OrderStatus.ready);
+    final finished = [
+      for (final o in orders)
+        if (!o.status.isOpen) o,
+    ].take(10).toList();
+    final weekAgo = DateTime.now().subtract(const Duration(days: 7));
+    final collected = orders
+        .where(
+          (o) =>
+              o.status == OrderStatus.collected && o.createdAt.isAfter(weekAgo),
+        )
+        .fold(0, (sum, o) => sum + o.totalKes);
+    final low = [
+      for (final p in parts)
+        if (p.active && p.stockQty <= lowStockAt) p,
+    ]..sort((a, b) => a.stockQty.compareTo(b.stockQty));
+
+    final groups = [
+      ('New, not confirmed', 'new', fresh),
+      ('Getting ready', 'preparing', preparing),
+      ('Ready for pickup', 'ready', ready),
+    ];
+    Widget card(PartsOrder o) => OrderCard(
+      order: o,
+      who: o.buyerName,
+      phone: o.buyerPhone,
+      subtitle: 'Verified buyer · ordered ${agoText(o.createdAt)}',
+      showStatus: false,
+      actions: actions(o),
+    );
+
+    if (!wide) {
+      return ListView(
+        key: const Key('shop-orders'),
+        padding: const EdgeInsets.fromLTRB(16, 4, 16, 24),
+        children: [
+          Text(
+            line,
+            key: const Key('shop-orders-line'),
+            style: const TextStyle(color: muted),
+          ),
+          if (orders.isEmpty)
+            const Padding(
+              padding: EdgeInsets.only(top: 24),
+              child: Text(
+                'No orders yet. Garages and mechanics see your parts as soon as you add them.',
+                textAlign: TextAlign.center,
+              ),
+            ),
+          for (final (title, key, list) in groups)
+            if (list.isNotEmpty) ...[
+              const SizedBox(height: 18),
+              _Group(title, list.length),
+              const SizedBox(height: 8),
+              for (final o in list)
+                Padding(
+                  key: Key('group-$key-${o.id}'),
+                  padding: const EdgeInsets.only(bottom: 10),
+                  child: card(o),
+                ),
+            ],
+          if (low.isNotEmpty) ...[
+            const SizedBox(height: 18),
+            _LowStock(low, onEditPart),
+          ],
+          if (finished.isNotEmpty) ...[
+            const SizedBox(height: 18),
+            _Group('Done recently', finished.length),
+            const SizedBox(height: 8),
+            for (final o in finished)
+              Padding(
+                padding: const EdgeInsets.only(bottom: 10),
+                child: card(o),
+              ),
+          ],
+        ],
+      );
+    }
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(24, 20, 24, 0),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          const Text(
+            'Orders',
+            style: TextStyle(fontSize: 26, fontWeight: FontWeight.w800),
+          ),
+          Text(
+            line,
+            key: const Key('shop-orders-line'),
+            style: const TextStyle(color: muted),
+          ),
+          const SizedBox(height: 16),
+          Row(
+            children: [
+              for (final (i, (label, value, key)) in [
+                ('New, not confirmed', '${fresh.length}', 'kpi-new'),
+                ('To get ready', '${preparing.length}', 'kpi-preparing'),
+                ('Waiting for pickup', '${ready.length}', 'kpi-ready'),
+                ('Collected, last 7 days', kes(collected), 'kpi-sold'),
+              ].indexed) ...[
+                if (i > 0) const SizedBox(width: 12),
+                Expanded(
+                  child: Container(
+                    key: Key(key),
+                    padding: const EdgeInsets.all(14),
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(16),
+                      border: Border.all(color: hairline),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          label,
+                          style: const TextStyle(color: muted, fontSize: 13),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          value,
+                          style: const TextStyle(
+                            fontSize: 22,
+                            fontWeight: FontWeight.w800,
+                            fontFeatures: [FontFeature.tabularFigures()],
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
+            ],
+          ),
+          const SizedBox(height: 16),
+          Expanded(
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                for (final (i, (title, key, list)) in groups.indexed) ...[
+                  if (i > 0) const SizedBox(width: 12),
+                  Expanded(
+                    child: Container(
+                      key: Key('shop-col-$key'),
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: _column,
+                        borderRadius: BorderRadius.circular(16),
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          _Group(title, list.length),
+                          const SizedBox(height: 10),
+                          Expanded(
+                            child: list.isEmpty
+                                ? const Text(
+                                    'Nothing here',
+                                    style: TextStyle(
+                                      color: muted,
+                                      fontSize: 13,
+                                    ),
+                                  )
+                                : ListView.separated(
+                                    itemCount: list.length,
+                                    separatorBuilder: (_, _) =>
+                                        const SizedBox(height: 10),
+                                    itemBuilder: (_, j) => card(list[j]),
+                                  ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ],
+                const SizedBox(width: 16),
+                SizedBox(
+                  width: 280,
+                  child: ListView(
+                    padding: const EdgeInsets.only(bottom: 24),
+                    children: [
+                      _LowStock(low, onEditPart),
+                      if (finished.isNotEmpty) ...[
+                        const SizedBox(height: 16),
+                        _DoneList(finished),
+                      ],
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
       ),
     );
   }
 }
 
-class _FutureList<T> extends StatelessWidget {
-  const _FutureList({
-    required this.future,
-    required this.empty,
-    required this.item,
+/// Parts almost out of stock, to update before garages are turned away.
+class _LowStock extends StatelessWidget {
+  const _LowStock(this.parts, this.onEdit);
+  final List<PartListing> parts;
+  final void Function(PartListing) onEdit;
+
+  @override
+  Widget build(BuildContext context) => Container(
+    key: const Key('shop-low-stock'),
+    padding: const EdgeInsets.all(14),
+    decoration: BoxDecoration(
+      color: Colors.white,
+      borderRadius: BorderRadius.circular(16),
+      border: Border.all(color: hairline),
+    ),
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        const Text(
+          'Running low',
+          style: TextStyle(fontSize: 15, fontWeight: FontWeight.w800),
+        ),
+        const SizedBox(height: 4),
+        if (parts.isEmpty)
+          const Text(
+            'Every part has more than 2 in stock.',
+            style: TextStyle(color: muted, fontSize: 13),
+          ),
+        for (final p in parts)
+          InkWell(
+            key: Key('low-${p.id}'),
+            onTap: () => onEdit(p),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(vertical: 8),
+              child: Row(
+                children: [
+                  Expanded(child: Text(p.title)),
+                  const SizedBox(width: 8),
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 8,
+                      vertical: 2,
+                    ),
+                    decoration: BoxDecoration(
+                      color: p.stockQty == 0 ? alertFill : warnFill,
+                      borderRadius: BorderRadius.circular(99),
+                    ),
+                    child: Text(
+                      p.stockQty == 0 ? 'Out' : '${p.stockQty} left',
+                      style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w700,
+                        color: p.stockQty == 0 ? alertInk : warnInk,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+      ],
+    ),
+  );
+}
+
+class _DoneList extends StatelessWidget {
+  const _DoneList(this.orders);
+  final List<PartsOrder> orders;
+
+  @override
+  Widget build(BuildContext context) => Container(
+    padding: const EdgeInsets.all(14),
+    decoration: BoxDecoration(
+      color: Colors.white,
+      borderRadius: BorderRadius.circular(16),
+      border: Border.all(color: hairline),
+    ),
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        const Text(
+          'Done recently',
+          style: TextStyle(fontSize: 15, fontWeight: FontWeight.w800),
+        ),
+        for (final o in orders)
+          Padding(
+            padding: const EdgeInsets.only(top: 8),
+            child: Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    '${o.buyerName}\n${o.status.label}',
+                    style: const TextStyle(fontSize: 13),
+                  ),
+                ),
+                Text(
+                  kes(o.totalKes),
+                  style: const TextStyle(
+                    fontWeight: FontWeight.w600,
+                    fontFeatures: [FontFeature.tabularFigures()],
+                  ),
+                ),
+              ],
+            ),
+          ),
+      ],
+    ),
+  );
+}
+
+/// The shop's parts: price, stock, and whether garages can see each one.
+class _PartsPanel extends StatelessWidget {
+  const _PartsPanel({
+    required this.parts,
+    required this.wide,
+    required this.onAdd,
+    required this.onEdit,
   });
-  final Future<List<T>> future;
-  final String empty;
-  final Widget Function(T) item;
+  final List<PartListing> parts;
+  final bool wide;
+  final VoidCallback onAdd;
+  final void Function(PartListing) onEdit;
 
   @override
   Widget build(BuildContext context) {
-    return FutureBuilder<List<T>>(
-      future: future,
-      builder: (context, snap) {
-        // A background refresh keeps showing the last list.
-        if (!snap.hasData && snap.connectionState != ConnectionState.done) {
-          return const Center(child: CircularProgressIndicator());
-        }
-        if (snap.hasError) {
-          return Center(child: Text(_friendly(snap.error!)));
-        }
-        final list = snap.data!;
-        if (list.isEmpty) {
-          return Center(
-            child: Padding(
-              padding: const EdgeInsets.all(24),
-              child: Text(empty, textAlign: TextAlign.center),
+    final shown = parts.where((p) => p.active).length;
+    return ListView(
+      padding: wide
+          ? const EdgeInsets.fromLTRB(24, 20, 24, 24)
+          : const EdgeInsets.fromLTRB(16, 4, 16, 24),
+      children: [
+        if (wide)
+          const Text(
+            'Our parts',
+            style: TextStyle(fontSize: 26, fontWeight: FontWeight.w800),
+          ),
+        Text(
+          parts.isEmpty
+              ? 'No parts yet. Garages and mechanics see each part as soon as you list it.'
+              : '${parts.length} ${parts.length == 1 ? 'part' : 'parts'} · $shown shown to garages and mechanics',
+          style: const TextStyle(color: muted),
+        ),
+        const SizedBox(height: 12),
+        Align(
+          alignment: Alignment.centerLeft,
+          child: SizedBox(
+            width: wide ? 220 : double.infinity,
+            child: BigButton(
+              key: const Key('add-part'),
+              icon: Icons.add,
+              label: 'List a part',
+              onPressed: onAdd,
             ),
-          );
-        }
-        return ListView.separated(
-          padding: const EdgeInsets.fromLTRB(16, 12, 16, 96),
-          itemCount: list.length,
-          separatorBuilder: (_, _) => const SizedBox(height: 10),
-          itemBuilder: (_, i) => item(list[i]),
-        );
-      },
+          ),
+        ),
+        const SizedBox(height: 14),
+        if (parts.isNotEmpty)
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 14),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(18),
+              border: Border.all(color: hairline),
+            ),
+            child: Column(
+              children: [
+                for (final (i, p) in parts.indexed)
+                  InkWell(
+                    key: Key('shop-part-${p.id}'),
+                    onTap: () => onEdit(p),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(vertical: 12),
+                      decoration: BoxDecoration(
+                        border: i == 0
+                            ? null
+                            : const Border(
+                                top: BorderSide(color: Color(0xFFEEF0EC)),
+                              ),
+                      ),
+                      child: Row(
+                        children: [
+                          if (p.photoPath != null)
+                            PartPhoto(p.photoPath!, size: 44)
+                          else
+                            Container(
+                              width: 44,
+                              height: 44,
+                              decoration: BoxDecoration(
+                                color: tint,
+                                borderRadius: BorderRadius.circular(10),
+                              ),
+                              child: const Icon(
+                                Icons.settings_outlined,
+                                color: forest,
+                                size: 20,
+                              ),
+                            ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  p.title,
+                                  style: const TextStyle(
+                                    fontWeight: FontWeight.w700,
+                                  ),
+                                ),
+                                Text(
+                                  p.fitment,
+                                  style: const TextStyle(
+                                    color: muted,
+                                    fontSize: 13,
+                                  ),
+                                ),
+                                const SizedBox(height: 4),
+                                Wrap(
+                                  spacing: 6,
+                                  runSpacing: 4,
+                                  children: [
+                                    _Tag(
+                                      p.stockQty == 0
+                                          ? 'Out of stock'
+                                          : '${p.stockQty} in stock',
+                                      warn: p.stockQty <= lowStockAt,
+                                    ),
+                                    if (!p.active) const _Tag('Hidden'),
+                                  ],
+                                ),
+                              ],
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          Text(
+                            kes(p.priceKes),
+                            style: const TextStyle(
+                              fontWeight: FontWeight.w800,
+                              fontFeatures: [FontFeature.tabularFigures()],
+                            ),
+                          ),
+                          const Icon(Icons.chevron_right, color: muted),
+                        ],
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+          ),
+      ],
     );
   }
+}
+
+class _Tag extends StatelessWidget {
+  const _Tag(this.text, {this.warn = false});
+  final String text;
+  final bool warn;
+
+  @override
+  Widget build(BuildContext context) => Container(
+    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+    decoration: BoxDecoration(
+      color: warn ? warnFill : tint,
+      borderRadius: BorderRadius.circular(99),
+    ),
+    child: Text(
+      text,
+      style: TextStyle(
+        fontSize: 12,
+        fontWeight: FontWeight.w700,
+        color: warn ? warnInk : forest,
+      ),
+    ),
+  );
 }
 
 /// Add or change one of the shop's parts.
