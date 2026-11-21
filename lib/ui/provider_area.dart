@@ -8,7 +8,7 @@ import '../models/service_provider.dart';
 import '../models/trade.dart';
 import '../state/app_state.dart';
 import 'admin_screen.dart';
-import 'inbox_screen.dart';
+import 'garage_screen.dart';
 import 'parts_screen.dart';
 import 'shop_screen.dart';
 import 'theme.dart';
@@ -467,36 +467,22 @@ class _SignInState extends ConsumerState<_SignInScreen> {
 }
 
 // ---------------------------------------------------------------------------
-// Manage: status and the availability switch
+// Manage: checks while pending, then the garage portal's Today screen
 // ---------------------------------------------------------------------------
-class _ManageScreen extends ConsumerStatefulWidget {
+class _ManageScreen extends ConsumerWidget {
   const _ManageScreen(this.listing);
   final MyListing listing;
 
   @override
-  ConsumerState<_ManageScreen> createState() => _ManageState();
-}
-
-class _ManageState extends ConsumerState<_ManageScreen> {
-  bool busy = false;
-
-  Future<void> _set(Availability a) async {
-    setState(() => busy = true);
-    final messenger = ScaffoldMessenger.of(context);
-    try {
-      await ref.read(accountProvider).setAvailability(a);
-      ref.invalidate(myListingProvider);
-      ref.invalidate(nearbyProvider);
-    } catch (e) {
-      messenger.showSnackBar(SnackBar(content: Text(_friendly(e))));
-    } finally {
-      if (mounted) setState(() => busy = false);
+  Widget build(BuildContext context, WidgetRef ref) {
+    final l = listing;
+    if (l.status == ListingStatus.approved) {
+      return GarageToday(
+        listing: l,
+        onSignOut: () => _signOut(ref),
+        parts: const _PartsEntry(),
+      );
     }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final l = widget.listing;
     return Scaffold(
       appBar: AppBar(
         title: Text(l.name),
@@ -510,144 +496,27 @@ class _ManageState extends ConsumerState<_ManageScreen> {
       body: ContentWidth(
         child: ListView(
           padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
-          children: switch (l.status) {
-            ListingStatus.pending => [
-              const Text(
-                'Our team is checking your listing',
-                style: TextStyle(fontSize: 20, fontWeight: FontWeight.w700),
-              ),
-              const SizedBox(height: 4),
-              const Text(
-                'Owners will see you once the checks are done. If our team asked for a document, '
-                'you can add it here. Only our verification team can open them.',
-              ),
-              const SizedBox(height: 12),
-              _Documents(l.type),
-            ],
-            ListingStatus.suspended => const [
-              _StatusNote(
-                icon: Icons.block,
-                title: 'Your listing is paused',
-                body: 'Owners cannot see you right now. Contact support.',
-              ),
-            ],
-            ListingStatus.approved => [
-              const InboxEntry(),
-              const SizedBox(height: 12),
-              const _PartsEntry(),
-              const SizedBox(height: 20),
-              const Text(
-                'Are you taking jobs now?',
-                style: TextStyle(fontSize: 20, fontWeight: FontWeight.w700),
-              ),
-              const SizedBox(height: 4),
-              Text(_statusLine(context, l)),
-              const SizedBox(height: 16),
-              for (final (a, label, hint) in const [
-                (
-                  Availability.available,
-                  'Available',
-                  'Owners can call you now',
-                ),
-                (
-                  Availability.busy,
-                  'Busy',
-                  'Shown, but owners know you are on a job',
-                ),
-                (Availability.offline, 'Offline', 'Not taking jobs'),
-              ]) ...[
-                _AvailabilityButton(
-                  key: Key('set-${a.name}'),
-                  label: label,
-                  hint: hint,
-                  color: a.color,
-                  selected: l.availability == a,
-                  onTap: busy ? null : () => _set(a),
-                ),
-                const SizedBox(height: 10),
-              ],
-              const SizedBox(height: 6),
-              const Text(
-                '"Available" lasts 4 hours. Tap it again to stay available, so owners never call a number that will not be answered.',
-                style: TextStyle(fontSize: 13),
-              ),
-            ],
-          },
-        ),
-      ),
-    );
-  }
-
-  String _statusLine(BuildContext context, MyListing l) {
-    final until = l.availableUntil;
-    return switch (l.availability) {
-      Availability.available when until != null =>
-        'Owners see you as available until ${TimeOfDay.fromDateTime(until).format(context)}.',
-      Availability.unconfirmed =>
-        'Your "Available" has expired. Tap Available to show up first again.',
-      Availability.busy => 'Owners see you as busy.',
-      _ => 'Owners see you as offline.',
-    };
-  }
-}
-
-class _AvailabilityButton extends StatelessWidget {
-  const _AvailabilityButton({
-    super.key,
-    required this.label,
-    required this.hint,
-    required this.color,
-    required this.selected,
-    required this.onTap,
-  });
-  final String label;
-  final String hint;
-  final Color color;
-  final bool selected;
-  final VoidCallback? onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    return Material(
-      color: selected ? color.withValues(alpha: 0.12) : Colors.white,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(14),
-        side: BorderSide(
-          color: selected ? color : const Color(0xFFD5DBD6),
-          width: selected ? 2 : 1,
-        ),
-      ),
-      child: InkWell(
-        borderRadius: BorderRadius.circular(14),
-        onTap: onTap,
-        child: Padding(
-          padding: const EdgeInsets.all(16),
-          child: Row(
-            children: [
-              Container(
-                width: 14,
-                height: 14,
-                decoration: BoxDecoration(color: color, shape: BoxShape.circle),
-              ),
-              const SizedBox(width: 14),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      label,
-                      style: const TextStyle(
-                        fontSize: 17,
-                        fontWeight: FontWeight.w700,
-                      ),
-                    ),
-                    Text(hint),
-                  ],
-                ),
-              ),
-              if (selected) Icon(Icons.check_circle, color: color),
-            ],
-          ),
+          children: l.status == ListingStatus.suspended
+              ? const [
+                  _StatusNote(
+                    icon: Icons.block,
+                    title: 'Your listing is paused',
+                    body: 'Owners cannot see you right now. Contact support.',
+                  ),
+                ]
+              : [
+                  const Text(
+                    'Our team is checking your listing',
+                    style: TextStyle(fontSize: 20, fontWeight: FontWeight.w700),
+                  ),
+                  const SizedBox(height: 4),
+                  const Text(
+                    'Owners will see you once the checks are done. If our team asked for a document, '
+                    'you can add it here. Only our verification team can open them.',
+                  ),
+                  const SizedBox(height: 12),
+                  _Documents(l.type),
+                ],
         ),
       ),
     );
@@ -805,17 +674,30 @@ class _PartsEntry extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final access = ref.watch(accessProvider).value;
     if (access == null || access.buyers.isEmpty) return const SizedBox.shrink();
-    return Card(
+    return Material(
+      color: Colors.white,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(18),
+        side: const BorderSide(color: hairline),
+      ),
       child: ListTile(
         key: const Key('open-parts'),
-        leading: const Icon(Icons.inventory_2_outlined, color: brandGreen),
+        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+        leading: Container(
+          width: 44,
+          height: 44,
+          decoration: BoxDecoration(
+            color: tint,
+            borderRadius: BorderRadius.circular(12),
+          ),
+          child: const Icon(Icons.inventory_2_outlined, color: forest),
+        ),
         title: const Text(
           'Order spare parts',
           style: TextStyle(fontWeight: FontWeight.w700),
         ),
-        subtitle: const Text(
-          'From verified parts shops. Only for mechanics and garages.',
-        ),
+        subtitle: const Text('From verified parts shops near you.'),
         trailing: const Icon(Icons.chevron_right),
         onTap: () => Navigator.of(context).push(
           MaterialPageRoute<void>(

@@ -65,7 +65,22 @@ Not built from the design yet: live requests table, side-by-side detail view, se
 Left out on purpose: the map and arrival time (no mechanic location is collected),
 paying through Fundi (M-Pesa not built), and a bottom tab bar (the My repair button
 in the header already does this without adding a step).
-64 Flutter tests.
+
+**Garage portal rebuilt (21 Nov 2026)** (same rules, `lib/ui/garage_screen.dart`
+replaces the old inbox screen):
+- Phone: a Today screen. A forest card on top with the name, Verified, and an
+  Available / Busy / Offline switch ("Keep me on for 4 more hours" when available).
+  New requests show right there with the owner's note, voice note and photo, and
+  Take the job / Pass. Taken jobs are listed under Your jobs with where each stands
+  (Write the price, Price sent, Approved, Done). Order spare parts sits below.
+- One job: four-step bar (Taken, Price sent, Approved, Done), call the owner, what
+  the owner said, any complaint and the one reply, Your price, and Job done.
+- Laptop (1000 px and wider): availability on the left and a job board with five
+  columns: New requests, Write the price, Waiting for owner, Working, Done, plus
+  the money waiting for owners and approved.
+Left out on purpose: the answer countdown and "Arrived" step (not tracked yet),
+team members per job (garages have no staff assignment yet), and a bottom tab bar.
+66 Flutter tests.
 
 ## Separate portal links (20 Nov 2026, evening)
 

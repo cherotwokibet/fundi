@@ -805,7 +805,7 @@ void main() {
       expect(find.text('Admin'), findsNothing);
       await tester.tap(find.byKey(const Key('go-portal-garage')));
       await tester.pumpAndSettle();
-      expect(find.text('Are you taking jobs now?'), findsOneWidget);
+      expect(find.text('Taking jobs now?'), findsOneWidget);
       expect(find.text('Owners see you as offline.'), findsOneWidget);
       expect(find.byKey(const Key('open-parts')), findsOneWidget);
       await tester.tap(find.byKey(const Key('set-available')));
@@ -1424,8 +1424,6 @@ void main() {
     ) async {
       await pumpApproved(tester);
       expect(find.text('2 owners are waiting for an answer'), findsOneWidget);
-      await tester.tap(find.byKey(const Key('open-inbox')));
-      await tester.pumpAndSettle();
 
       expect(find.textContaining('clicking sound'), findsOneWidget);
       expect(
@@ -1439,13 +1437,15 @@ void main() {
 
     testWidgets('a mechanic sends a quote on a job they took', (tester) async {
       await pumpApproved(tester);
-      await tester.tap(find.byKey(const Key('open-inbox')));
-      await tester.pumpAndSettle();
       // No quote before taking the job.
       expect(find.byKey(const Key('send-quote-r1')), findsNothing);
       await tester.tap(find.byKey(const Key('accept-r1')));
       await tester.pumpAndSettle();
       await tester.pump(const Duration(seconds: 5));
+      await tester.pumpAndSettle();
+      await tester.ensureVisible(find.byKey(const Key('job-r1')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('job-r1')));
       await tester.pumpAndSettle();
 
       await tester.ensureVisible(find.byKey(const Key('send-quote-r1')));
@@ -1506,18 +1506,20 @@ void main() {
 
     testWidgets('a mechanic marks a job they took as done', (tester) async {
       await pumpApproved(tester);
-      await tester.tap(find.byKey(const Key('open-inbox')));
-      await tester.pumpAndSettle();
       expect(find.byKey(const Key('job-done-r1')), findsNothing);
       await tester.tap(find.byKey(const Key('accept-r1')));
       await tester.pumpAndSettle();
       await tester.pump(const Duration(seconds: 5));
       await tester.pumpAndSettle();
+      await tester.ensureVisible(find.byKey(const Key('job-r1')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('job-r1')));
+      await tester.pumpAndSettle();
       await tester.ensureVisible(find.byKey(const Key('job-done-r1')));
       await tester.pumpAndSettle();
       await tester.tap(find.byKey(const Key('job-done-r1')));
       await tester.pumpAndSettle();
-      expect(find.text('Done'), findsOneWidget);
+      expect(find.byKey(const Key('job-finished')), findsOneWidget);
       expect(find.byKey(const Key('job-done-r1')), findsNothing);
       expect(find.byKey(const Key('send-quote-r1')), findsNothing);
     });
@@ -1527,11 +1529,13 @@ void main() {
     ) async {
       await pumpApproved(tester);
       inbox.ownerComplains('r1', 'The brakes still squeal after the repair');
-      await tester.tap(find.byKey(const Key('open-inbox')));
-      await tester.pumpAndSettle();
       await tester.tap(find.byKey(const Key('accept-r1')));
       await tester.pumpAndSettle();
       await tester.pump(const Duration(seconds: 5));
+      await tester.pumpAndSettle();
+      await tester.ensureVisible(find.byKey(const Key('job-r1')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('job-r1')));
       await tester.pumpAndSettle();
       // Only on the job it is about.
       expect(find.byKey(const Key('complaint-r2')), findsNothing);
@@ -1562,12 +1566,10 @@ void main() {
 
     testWidgets('take one request and pass on another', (tester) async {
       await pumpApproved(tester);
-      await tester.tap(find.byKey(const Key('open-inbox')));
-      await tester.pumpAndSettle();
 
       await tester.tap(find.byKey(const Key('accept-r1')));
       await tester.pumpAndSettle();
-      expect(find.text('You took this'), findsOneWidget);
+      expect(find.byKey(const Key('job-r1')), findsOneWidget);
       expect(find.byKey(const Key('accept-r1')), findsNothing);
       // Let the confirmation message clear before the next tap.
       await tester.pump(const Duration(seconds: 5));
@@ -1579,10 +1581,57 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.byKey(const Key('request-r2')), findsNothing);
 
-      // Back on the manage screen nothing is waiting any more.
-      await tester.pageBack();
-      await tester.pumpAndSettle();
+      // Nothing is waiting any more.
       expect(find.text('No new requests'), findsOneWidget);
+    });
+
+    testWidgets('a taken job shows its stage and the owner\'s words', (
+      tester,
+    ) async {
+      await pumpApproved(tester);
+      expect(find.byKey(const Key('garage-availability')), findsOneWidget);
+      expect(find.byKey(const Key('job-r1')), findsNothing);
+      await tester.tap(find.byKey(const Key('accept-r1')));
+      await tester.pumpAndSettle();
+      await tester.pump(const Duration(seconds: 5));
+      await tester.pumpAndSettle();
+      expect(find.text('Write the price'), findsOneWidget);
+      await tester.ensureVisible(find.byKey(const Key('job-r1')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('job-r1')));
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('job-stage')), findsOneWidget);
+      expect(find.textContaining('clicking sound'), findsOneWidget);
+      expect(find.text('Send a quote'), findsOneWidget);
+    });
+
+    testWidgets('on a laptop the garage sees a job board', (tester) async {
+      await pumpApproved(tester);
+      tester.view.physicalSize = const Size(1440, 900);
+      tester.view.devicePixelRatio = 1;
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('job-board')), findsOneWidget);
+      for (final c in [
+        'newRequest',
+        'needsPrice',
+        'waitingOwner',
+        'working',
+        'done',
+      ]) {
+        expect(find.byKey(Key('board-$c')), findsOneWidget);
+      }
+      expect(find.byKey(const Key('request-r1')), findsOneWidget);
+      await tester.tap(find.byKey(const Key('accept-r1')));
+      await tester.pumpAndSettle();
+      await tester.pump(const Duration(seconds: 5));
+      await tester.pumpAndSettle();
+      expect(
+        find.descendant(
+          of: find.byKey(const Key('board-needsPrice')),
+          matching: find.byKey(const Key('job-r1')),
+        ),
+        findsOneWidget,
+      );
     });
 
     test('a request can only be answered once', () async {
