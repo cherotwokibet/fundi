@@ -14,6 +14,7 @@ import 'package:fundi/data/voice_player.dart';
 import 'package:fundi/data/voice_recorder.dart';
 import 'package:fundi/data/zones.dart';
 import 'package:fundi/main.dart';
+import 'package:fundi/models/admin_request.dart';
 import 'package:fundi/models/portal.dart';
 import 'package:fundi/models/quote.dart';
 import 'package:fundi/models/service_provider.dart';
@@ -1345,6 +1346,209 @@ void main() {
       expect(find.text('Mwangi Mobile Mechanic'), findsNothing);
     },
   );
+
+  test('admin search matches names, areas and phone numbers in any form', () {
+    bool m(String q) => adminSearchMatches(
+      q,
+      texts: ['Mwangi Mobile Mechanic', 'Kasarani'],
+      phones: ['+254712345678'],
+    );
+    expect(m('mwangi'), isTrue);
+    expect(m('KASA'), isTrue);
+    expect(m('0712 345 678'), isTrue);
+    expect(m('254712345678'), isTrue);
+    expect(m('5678'), isTrue);
+    // Too few digits to mean a number, and words that are not there.
+    expect(m('567'), isFalse);
+    expect(m('otieno'), isFalse);
+    expect(m('   '), isTrue);
+  });
+
+  test('admin request rows map to stages in plain words', () {
+    final r = AdminRequest.fromRow({
+      'id': 'c3d40000-0000-4000-8000-000000000003',
+      'created_at': '2026-11-24T08:00:00Z',
+      'waiting_since': '2026-11-24T08:01:00Z',
+      'stage': 'no_answer',
+      'area': 'Westlands',
+      'note': null,
+      'mode': 'visit_garage',
+      'provider_name': 'Otieno',
+      'provider_phone': '+254700000001',
+      'rematch_count': 1,
+      'handoff': 'passed',
+      'quote_total_kes': null,
+      'has_photo': false,
+      'has_voice': true,
+      'complaint_status': 'open',
+      'refund_status': 'none',
+    });
+    expect(r.stage, RequestStage.noAnswer);
+    expect(r.stage.label, 'No answer');
+    expect(r.stage.stuck, isTrue);
+    expect(r.ref, 'C3D400');
+    expect(r.problem, 'Voice note');
+    expect(r.comeToMe, isFalse);
+    expect(r.hasComplaint, isTrue);
+    expect(r.matches('c3d4'), isTrue);
+    expect(r.matches('0700 000 001'), isTrue);
+    expect(shortAge(const Duration(minutes: 130)), '2h 10m');
+  });
+
+  Future<List<String>> pumpLaptopAdmin(WidgetTester tester) async {
+    final account = SampleAccountRepository();
+    await account.verifyCode(
+      SampleAccountRepository.adminPhone,
+      SampleAccountRepository.sampleCode,
+    );
+    final dialled = <String>[];
+    tester.view.physicalSize = const Size(1440, 900);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          accountProvider.overrideWithValue(account),
+          gpsLookupProvider.overrideWithValue(() async => null),
+          dialerProvider.overrideWithValue((phone) async {
+            dialled.add(phone);
+            return true;
+          }),
+        ],
+        child: const FundiApp(portal: Portal.admin),
+      ),
+    );
+    await tester.pumpAndSettle();
+    return dialled;
+  }
+
+  testWidgets(
+    'admin on a laptop: live requests, stuck first, opened beside the table',
+    (tester) async {
+      final dialled = await pumpLaptopAdmin(tester);
+      // The overview has the table, and a task for the stuck request.
+      expect(find.byKey(const Key('live-requests')), findsOneWidget);
+      expect(find.byKey(const Key('task-requests')), findsOneWidget);
+      await tester.tap(find.byKey(const Key('admin-tab-requests')));
+      await tester.pumpAndSettle();
+      expect(tester.takeException(), isNull);
+      // Open requests only: the finished job is under "Last 7 days".
+      expect(find.text('Open · 4'), findsOneWidget);
+      expect(find.text('Sample: brakes'), findsNothing);
+      // Nobody has the Thika Road one, so it is first and open.
+      const stuck = 'a1f30000-0000-4000-8000-000000000001';
+      expect(find.byKey(const Key('request-detail-$stuck')), findsOneWidget);
+      expect(find.textContaining('No free mechanic fitted'), findsOneWidget);
+      expect(find.byKey(const Key('request-call-mechanic')), findsNothing);
+
+      const working = 'd4e50000-0000-4000-8000-000000000004';
+      await tester.tap(find.byKey(const Key('request-row-$working')));
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('request-detail-$working')), findsOneWidget);
+      expect(find.text('KES 4,200'), findsOneWidget);
+      await tester.tap(find.byKey(const Key('request-call-mechanic')));
+      expect(dialled, ['+254700000003']);
+
+      // The finished job with a complaint leads to Complaints.
+      await tester.tap(find.textContaining('Last 7 days'));
+      await tester.pumpAndSettle();
+      await tester.tap(
+        find.byKey(
+          const Key('request-row-e5f60000-0000-4000-8000-000000000005'),
+        ),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('request-open-complaint')));
+      await tester.pumpAndSettle();
+      expect(find.textContaining('brakes still squeal'), findsOneWidget);
+      expect(tester.takeException(), isNull);
+    },
+  );
+
+  testWidgets('admin on a laptop: search by phone opens the listing beside '
+      'the queue', (tester) async {
+    await pumpLaptopAdmin(tester);
+    await tester.enterText(
+      find.byKey(const Key('admin-search')),
+      '0700 000012',
+    );
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('admin-search-results')), findsOneWidget);
+    expect(find.byKey(const Key('hit-listing-p2')), findsOneWidget);
+    expect(find.byKey(const Key('hit-listing-p1')), findsNothing);
+    await tester.tap(find.byKey(const Key('hit-listing-p2')));
+    await tester.pumpAndSettle();
+    // Mechanics & garages, with Eastlands open beside the list.
+    expect(find.byKey(const Key('listing-item-p2')), findsOneWidget);
+    expect(find.byKey(const ValueKey('listing-detail-p2')), findsOneWidget);
+    expect(find.byKey(const Key('admin-search-results')), findsNothing);
+
+    // A request found by its mechanic opens on Live requests.
+    await tester.enterText(find.byKey(const Key('admin-search')), 'kowino');
+    await tester.pumpAndSettle();
+    await tester.tap(
+      find.byKey(const Key('hit-request-d4e50000-0000-4000-8000-000000000004')),
+    );
+    await tester.pumpAndSettle();
+    expect(
+      find.byKey(
+        const Key('request-detail-d4e50000-0000-4000-8000-000000000004'),
+      ),
+      findsOneWidget,
+    );
+
+    await tester.enterText(find.byKey(const Key('admin-search')), 'zzzz');
+    await tester.pumpAndSettle();
+    expect(find.textContaining('Nothing matches'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('admin on a phone: requests tab, one request on its own page', (
+    tester,
+  ) async {
+    final account = SampleAccountRepository();
+    await account.verifyCode(
+      SampleAccountRepository.adminPhone,
+      SampleAccountRepository.sampleCode,
+    );
+    tester.view.physicalSize = const Size(1080, 2340);
+    tester.view.devicePixelRatio = 2.75;
+    addTearDown(tester.view.reset);
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          accountProvider.overrideWithValue(account),
+          gpsLookupProvider.overrideWithValue(() async => null),
+        ],
+        child: const FundiApp(portal: Portal.admin),
+      ),
+    );
+    await tester.pumpAndSettle();
+    // No wide table on a phone; the stuck request is a task instead.
+    expect(find.byKey(const Key('live-requests')), findsNothing);
+    await tester.ensureVisible(find.byKey(const Key('task-requests')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('task-requests')));
+    await tester.pumpAndSettle();
+    expect(find.text('Live requests'), findsOneWidget);
+    const row = Key('request-row-c3d40000-0000-4000-8000-000000000003');
+    await tester.ensureVisible(find.byKey(row));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(row));
+    await tester.pumpAndSettle();
+    expect(find.text('Request C3D400'), findsWidgets);
+    expect(find.text('Price sent'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+    // Search from the top bar.
+    await tester.pageBack();
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('admin-search-open')));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byKey(const Key('admin-search')), 'eastlands');
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('hit-listing-p2')), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
 
   test(
     'admin: no refund on a rejected complaint, or above the job cost',

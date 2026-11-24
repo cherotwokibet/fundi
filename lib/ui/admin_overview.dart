@@ -3,13 +3,15 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../data/account_repository.dart';
 import '../data/admin_repository.dart';
+import '../models/admin_request.dart';
 import '../models/complaint.dart';
 import '../models/trade.dart';
 import '../state/app_state.dart';
+import 'admin_requests.dart';
 import 'theme.dart';
 
 /// Where the admin console can go. The overview links into the others.
-enum AdminSection { overview, listings, shops, complaints }
+enum AdminSection { overview, listings, shops, requests, complaints }
 
 /// Verified providers needed before Phase 2 opens (see PROJECT_CONTEXT.md).
 const phase2Gate = 90;
@@ -22,12 +24,18 @@ class AdminSnapshot {
     required this.paused,
     required this.shops,
     required this.complaints,
+    required this.requests,
   });
   final List<AdminListing> waiting;
   final List<AdminListing> live;
   final List<AdminListing> paused;
   final List<PartsShop> shops;
   final List<Complaint> complaints;
+  final List<AdminRequest> requests;
+
+  /// Nobody has them, or nobody is answering.
+  List<AdminRequest> get stuckRequests =>
+      sortForAdmin(requests.where((r) => r.stage.stuck));
 
   List<Complaint> get openComplaints => [
     for (final c in complaints)
@@ -47,6 +55,8 @@ class AdminSnapshot {
       admin.listings(ListingStatus.suspended),
       admin.shops(),
       admin.complaints(),
+      // Live requests are extra: the overview still loads without them.
+      admin.requests().catchError((_) => <AdminRequest>[]),
     ]);
     return AdminSnapshot(
       waiting: results[0] as List<AdminListing>,
@@ -54,14 +64,22 @@ class AdminSnapshot {
       paused: results[2] as List<AdminListing>,
       shops: results[3] as List<PartsShop>,
       complaints: results[4] as List<Complaint>,
+      requests: results[5] as List<AdminRequest>,
     );
   }
 }
 
 /// The admin's first screen: the numbers that matter and a "Needs you" list.
 class AdminOverview extends ConsumerStatefulWidget {
-  const AdminOverview({super.key, required this.onGo});
+  const AdminOverview({
+    super.key,
+    required this.onGo,
+    required this.onOpenRequest,
+  });
   final ValueChanged<AdminSection> onGo;
+
+  /// Opens Live requests on one request, or the whole list (null).
+  final ValueChanged<String?> onOpenRequest;
 
   @override
   ConsumerState<AdminOverview> createState() => _AdminOverviewState();
@@ -108,7 +126,27 @@ class _AdminOverviewState extends ConsumerState<AdminOverview> {
             children: [
               _Kpis(s),
               const SizedBox(height: 20),
-              _NeedsYou(s, onGo: widget.onGo),
+              LayoutBuilder(
+                builder: (context, c) {
+                  final needs = _NeedsYou(s, onGo: widget.onGo);
+                  // The table needs room; phones get the stuck ones as tasks.
+                  if (c.maxWidth < 1000) return needs;
+                  return Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Expanded(flex: 2, child: needs),
+                      const SizedBox(width: 16),
+                      Expanded(
+                        flex: 3,
+                        child: LiveRequestsCard(
+                          s.requests,
+                          onOpen: widget.onOpenRequest,
+                        ),
+                      ),
+                    ],
+                  );
+                },
+              ),
             ],
           ),
         );
@@ -275,6 +313,22 @@ class _NeedsYou extends StatelessWidget {
         detail: 'Next: ${s.waiting.first.name}',
         action: 'Review',
         go: AdminSection.listings,
+      ),
+    if (s.stuckRequests.isNotEmpty)
+      (
+        key: 'task-requests',
+        icon: Icons.schedule,
+        fill: const Color(0xFFECEDEA),
+        ink: const Color(0xFF4A524F),
+        title: s.stuckRequests.length == 1
+            ? '1 request needs a look'
+            : '${s.stuckRequests.length} requests need a look',
+        detail:
+            '${s.stuckRequests.first.area ?? 'Unknown area'} · '
+            '${s.stuckRequests.first.stage.label.toLowerCase()} · '
+            '${shortAge(DateTime.now().difference(s.stuckRequests.first.createdAt))}',
+        action: 'See',
+        go: AdminSection.requests,
       ),
     for (final c in s.openComplaints)
       (

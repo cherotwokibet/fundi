@@ -11,6 +11,8 @@ import '../models/service_provider.dart';
 import '../models/trade.dart';
 import '../state/app_state.dart';
 import 'admin_overview.dart';
+import 'admin_requests.dart';
+import 'admin_search.dart';
 import 'parts_screen.dart';
 import 'theme.dart';
 import 'widgets.dart';
@@ -35,13 +37,43 @@ class _AdminScreenState extends ConsumerState<AdminScreen> {
   AdminSection section = AdminSection.overview;
   late Future<AdminSnapshot> counts = _counts();
 
+  /// What to open in the section: a listing or request id.
+  String? focus;
+  ListingStatus? focusStatus;
+
+  /// The search box. While it has words, results replace the section.
+  final search = TextEditingController();
+  bool searchOpen = false;
+  bool wasSearching = false;
+
   Future<AdminSnapshot> _counts() =>
       AdminSnapshot.load(ref.read(adminProvider));
 
-  void _go(AdminSection to) {
+  @override
+  void dispose() {
+    search.dispose();
+    super.dispose();
+  }
+
+  void _go(AdminSection to, {String? focus, ListingStatus? status}) {
     final next = _counts();
     setState(() {
       section = to;
+      counts = next;
+      this.focus = focus;
+      focusStatus = status;
+      search.clear();
+      searchOpen = false;
+      wasSearching = false;
+    });
+  }
+
+  void _searchChanged(String v) {
+    // Fresh numbers each time a search starts.
+    final starting = v.trim().isNotEmpty && !wasSearching;
+    wasSearching = v.trim().isNotEmpty;
+    final next = starting ? _counts() : counts;
+    setState(() {
       counts = next;
     });
   }
@@ -71,19 +103,48 @@ class _AdminScreenState extends ConsumerState<AdminScreen> {
       'Parts shops',
       'Only approved garages and mechanics can see their parts.',
     ),
+    AdminSection.requests: (
+      'Live requests',
+      'Every open request, who has it and where it stands. Refreshes every 30 seconds.',
+    ),
     AdminSection.complaints: (
       'Complaints',
       'Decide with a note both sides can read. Refunds are capped at what the job cost.',
     ),
   };
 
-  Widget _body() => switch (section) {
+  Widget _body() {
+    if (search.text.trim().isNotEmpty) {
+      return AdminSearchResults(
+        key: const ValueKey('search'),
+        query: search.text,
+        data: counts,
+        onListing: (l) =>
+            _go(AdminSection.listings, focus: l.id, status: l.status),
+        onShop: (_) => _go(AdminSection.shops),
+        onRequest: (r) => _go(AdminSection.requests, focus: r.id),
+      );
+    }
+    return _section();
+  }
+
+  Widget _section() => switch (section) {
     AdminSection.overview => AdminOverview(
       key: const ValueKey('overview'),
       onGo: _go,
+      onOpenRequest: (id) => _go(AdminSection.requests, focus: id),
     ),
-    AdminSection.listings => const _ListingsTab(key: ValueKey('listings')),
+    AdminSection.listings => _ListingsTab(
+      key: ValueKey('listings-$focus'),
+      focusId: focus,
+      focusStatus: focusStatus,
+    ),
     AdminSection.shops => const _ShopsTab(key: ValueKey('shops')),
+    AdminSection.requests => AdminRequestsView(
+      key: ValueKey('requests-$focus'),
+      focusId: focus,
+      onGo: _go,
+    ),
     AdminSection.complaints => const _ComplaintsTab(
       key: ValueKey('complaints'),
     ),
@@ -92,23 +153,74 @@ class _AdminScreenState extends ConsumerState<AdminScreen> {
   @override
   Widget build(BuildContext context) {
     final wide = MediaQuery.sizeOf(context).width >= 1000;
-    final (title, subtitle) = _titles[section]!;
+    final searching = search.text.trim().isNotEmpty;
+    final (title, subtitle) = searching
+        ? ('Search', 'Mechanics, garages, parts shops and requests.')
+        : _titles[section]!;
+    final searchBox = SizedBox(
+      width: wide ? 320 : double.infinity,
+      child: TextField(
+        key: const Key('admin-search'),
+        controller: search,
+        autofocus: !wide,
+        onChanged: _searchChanged,
+        decoration: InputDecoration(
+          isDense: true,
+          hintText: 'Search name, phone or request',
+          prefixIcon: const Icon(Icons.search, size: 20),
+          suffixIcon: searching
+              ? IconButton(
+                  key: const Key('admin-search-clear'),
+                  tooltip: 'Clear search',
+                  icon: const Icon(Icons.close, size: 18),
+                  onPressed: () => setState(() {
+                    search.clear();
+                    wasSearching = false;
+                  }),
+                )
+              : null,
+          filled: true,
+          fillColor: Colors.white,
+          border: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(12),
+            borderSide: const BorderSide(color: hairline),
+          ),
+          enabledBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(12),
+            borderSide: const BorderSide(color: hairline),
+          ),
+        ),
+      ),
+    );
+    final heads = Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(title, style: heading(wide ? 30 : 24)),
+        const SizedBox(height: 4),
+        Text(subtitle, style: const TextStyle(fontSize: 14, color: muted)),
+      ],
+    );
     final content = Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         Padding(
           padding: EdgeInsets.fromLTRB(20, wide ? 28 : 8, 20, 16),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(title, style: heading(wide ? 30 : 24)),
-              const SizedBox(height: 4),
-              Text(
-                subtitle,
-                style: const TextStyle(fontSize: 14, color: muted),
-              ),
-            ],
-          ),
+          child: wide
+              ? Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Expanded(child: heads),
+                    const SizedBox(width: 16),
+                    searchBox,
+                  ],
+                )
+              : Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    if (searchOpen) ...[searchBox, const SizedBox(height: 12)],
+                    heads,
+                  ],
+                ),
         ),
         Expanded(child: _body()),
       ],
@@ -145,6 +257,18 @@ class _AdminScreenState extends ConsumerState<AdminScreen> {
         backgroundColor: consolePage,
         title: const Text('Admin'),
         actions: [
+          IconButton(
+            key: const Key('admin-search-open'),
+            tooltip: 'Search',
+            icon: Icon(searchOpen ? Icons.search_off : Icons.search),
+            onPressed: () => setState(() {
+              searchOpen = !searchOpen;
+              if (!searchOpen) {
+                search.clear();
+                wasSearching = false;
+              }
+            }),
+          ),
           TextButton(
             key: const Key('admin-parts'),
             onPressed: _openParts,
@@ -188,6 +312,14 @@ class _AdminScreenState extends ConsumerState<AdminScreen> {
                 key: Key('admin-tab-shops'),
                 icon: Icon(Icons.storefront_outlined),
                 label: 'Shops',
+              ),
+              NavigationDestination(
+                key: const Key('admin-tab-requests'),
+                icon: badged(
+                  Icons.forum_outlined,
+                  s?.stuckRequests.length ?? 0,
+                ),
+                label: 'Requests',
               ),
               NavigationDestination(
                 key: const Key('admin-tab-complaints'),
@@ -364,6 +496,13 @@ class _Sidebar extends StatelessWidget {
               ),
               group('Work'),
               item(
+                'admin-tab-requests',
+                Icons.forum_outlined,
+                'Live requests',
+                to: AdminSection.requests,
+                count: s?.stuckRequests.length ?? 0,
+              ),
+              item(
                 'admin-tab-complaints',
                 Icons.flag_outlined,
                 'Complaints',
@@ -393,15 +532,22 @@ class _Sidebar extends StatelessWidget {
 
 /// Check each listing, then approve or pause it.
 class _ListingsTab extends ConsumerStatefulWidget {
-  const _ListingsTab({super.key});
+  const _ListingsTab({super.key, this.focusId, this.focusStatus});
+
+  /// A listing to open straight away (from search).
+  final String? focusId;
+  final ListingStatus? focusStatus;
 
   @override
   ConsumerState<_ListingsTab> createState() => _State();
 }
 
 class _State extends ConsumerState<_ListingsTab> {
-  ListingStatus tab = ListingStatus.pending;
+  late ListingStatus tab = widget.focusStatus ?? ListingStatus.pending;
   late Future<List<AdminListing>> rows = _load();
+
+  /// The listing open beside the list on a laptop.
+  late String? selected = widget.focusId;
 
   Future<List<AdminListing>> _load() => ref.read(adminProvider).listings(tab);
 
@@ -449,7 +595,7 @@ class _State extends ConsumerState<_ListingsTab> {
     return Align(
       alignment: Alignment.topLeft,
       child: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 900),
+        constraints: const BoxConstraints(maxWidth: 1180),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
@@ -524,11 +670,47 @@ class _State extends ConsumerState<_ListingsTab> {
                       ),
                     };
                   }
-                  return ListView.separated(
-                    padding: const EdgeInsets.fromLTRB(20, 4, 20, 24),
-                    itemCount: list.length,
-                    separatorBuilder: (_, _) => const SizedBox(height: 12),
-                    itemBuilder: (_, i) => _card(list[i]),
+                  return LayoutBuilder(
+                    builder: (context, c) {
+                      if (c.maxWidth < 860) {
+                        return ListView.separated(
+                          padding: const EdgeInsets.fromLTRB(20, 4, 20, 24),
+                          itemCount: list.length,
+                          separatorBuilder: (_, _) =>
+                              const SizedBox(height: 12),
+                          itemBuilder: (_, i) => _card(list[i]),
+                        );
+                      }
+                      // Laptop: the queue on the left, one listing open
+                      // beside it.
+                      final pick = list.where((l) => l.id == selected);
+                      final current = pick.isEmpty ? list.first : pick.first;
+                      return Padding(
+                        padding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
+                        child: Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            SizedBox(
+                              width: 340,
+                              child: _Queue(
+                                list,
+                                selectedId: current.id,
+                                onTap: (l) => setState(() => selected = l.id),
+                              ),
+                            ),
+                            const SizedBox(width: 16),
+                            Expanded(
+                              child: SingleChildScrollView(
+                                child: KeyedSubtree(
+                                  key: ValueKey('listing-detail-${current.id}'),
+                                  child: _card(current),
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      );
+                    },
                   );
                 },
               ),
@@ -719,6 +901,90 @@ class _State extends ConsumerState<_ListingsTab> {
               ),
           ],
         ),
+      ),
+    );
+  }
+}
+
+/// Laptop: the listings as a compact list; the chosen one is open beside it.
+class _Queue extends StatelessWidget {
+  const _Queue(this.list, {required this.selectedId, required this.onTap});
+  final List<AdminListing> list;
+  final String selectedId;
+  final ValueChanged<AdminListing> onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: hairline),
+      ),
+      clipBehavior: Clip.antiAlias,
+      child: ListView.builder(
+        shrinkWrap: true,
+        itemCount: list.length,
+        itemBuilder: (_, i) {
+          final l = list[i];
+          final on = l.id == selectedId;
+          final done = l.applicableChecks.where(l.checksPassed.contains).length;
+          return Material(
+            color: on ? const Color(0xFFF1F6EC) : Colors.white,
+            child: InkWell(
+              key: Key('listing-item-${l.id}'),
+              onTap: () => onTap(l),
+              child: Container(
+                padding: const EdgeInsets.fromLTRB(13, 12, 14, 12),
+                decoration: BoxDecoration(
+                  border: Border(
+                    left: BorderSide(
+                      color: on ? forest : Colors.transparent,
+                      width: 3,
+                    ),
+                    top: i == 0
+                        ? BorderSide.none
+                        : const BorderSide(color: Color(0xFFEEF0EC)),
+                  ),
+                ),
+                child: Row(
+                  children: [
+                    AdminAvatar(l.name),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            l.name,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                              fontSize: 14,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                          Text(
+                            '${l.area} · ${l.type == ProviderType.garage ? 'garage' : 'mobile'}',
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(fontSize: 13, color: muted),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    AdminPill(
+                      '$done of ${l.applicableChecks.length}',
+                      fill: l.canApprove ? const Color(0xFFDCEFE2) : warnFill,
+                      ink: l.canApprove ? const Color(0xFF135C37) : warnInk,
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          );
+        },
       ),
     );
   }

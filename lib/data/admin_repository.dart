@@ -2,6 +2,7 @@ import 'dart:typed_data';
 
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+import '../models/admin_request.dart';
 import '../models/complaint.dart';
 import '../models/service_provider.dart';
 import '../models/trade.dart';
@@ -143,6 +144,9 @@ abstract class AdminRepository {
 
   /// The refund reached the owner. [reference] is the M-Pesa code.
   Future<void> markRefundPaid(String complaintId, String reference);
+
+  /// Every open request, plus the ones from the last [days] days.
+  Future<List<AdminRequest>> requests({int days = 7});
 }
 
 class SupabaseAdminRepository implements AdminRepository {
@@ -385,6 +389,16 @@ class SupabaseAdminRepository implements AdminRepository {
     ),
   );
 
+  @override
+  Future<List<AdminRequest>> requests({int days = 7}) async {
+    final rows = await _guard(
+      () => _client.rpc('admin_requests', params: {'p_days': days}),
+    ) as List;
+    return [
+      for (final r in rows) AdminRequest.fromRow(r as Map<String, dynamic>),
+    ];
+  }
+
   Future<dynamic> _guard(Future<dynamic> Function() call) async {
     try {
       return await call();
@@ -586,4 +600,105 @@ class SampleAdminRepository implements AdminRepository {
       refundReference: reference.trim().toUpperCase(),
     );
   }
+
+  /// Invented requests, so Live requests can be tried without a backend.
+  /// Every name says "(sample)".
+  late final List<AdminRequest> sampleRequests = () {
+    final now = DateTime.now();
+    AdminRequest r(
+      String id,
+      RequestStage stage,
+      Duration age, {
+      String? area,
+      String? note,
+      String? mechanic,
+      String? phone,
+      int? quote,
+      bool voice = false,
+      bool photo = false,
+      int rematch = 0,
+      String handoff = 'first',
+      ComplaintStatus? complaint,
+      RefundStatus? refund,
+    }) => AdminRequest(
+      id: id,
+      createdAt: now.subtract(age),
+      waitingSince: now.subtract(age),
+      stage: stage,
+      area: area,
+      note: note,
+      providerId: mechanic == null ? null : 'sample-$id',
+      providerName: mechanic,
+      providerPhone: phone,
+      quoteTotalKes: quote,
+      hasVoice: voice,
+      hasPhoto: photo,
+      rematchCount: rematch,
+      handoff: handoff,
+      doneAt: stage == RequestStage.done ? now.subtract(age ~/ 2) : null,
+      complaintStatus: complaint,
+      refundStatus: refund,
+    );
+    return [
+      r(
+        'a1f30000-0000-4000-8000-000000000001',
+        RequestStage.unassigned,
+        const Duration(minutes: 9),
+        area: 'Thika Road',
+        note: 'Sample: flat battery, car will not start',
+        rematch: 2,
+        handoff: 'passed',
+      ),
+      r(
+        'b27c0000-0000-4000-8000-000000000002',
+        RequestStage.waiting,
+        const Duration(minutes: 2),
+        area: 'Kasarani',
+        mechanic: 'Peter Mwangi (sample)',
+        phone: '+254700000002',
+        voice: true,
+      ),
+      r(
+        'c3d40000-0000-4000-8000-000000000003',
+        RequestStage.priceSent,
+        const Duration(minutes: 24),
+        area: 'Westlands',
+        note: 'Sample: brakes squeal',
+        mechanic: 'Otieno Mobile Mechanic (sample)',
+        phone: '+254700000001',
+        quote: 2500,
+      ),
+      r(
+        'd4e50000-0000-4000-8000-000000000004',
+        RequestStage.working,
+        const Duration(minutes: 51),
+        area: 'Ngong Road',
+        note: 'Sample: overheating in traffic',
+        mechanic: 'Kowino Mechs (sample)',
+        phone: '+254700000003',
+        quote: 4200,
+        photo: true,
+      ),
+      r(
+        'e5f60000-0000-4000-8000-000000000005',
+        RequestStage.done,
+        const Duration(hours: 26),
+        area: 'Westlands',
+        note: 'Sample: brakes',
+        mechanic: 'Otieno Mobile Mechanic (sample)',
+        phone: '+254700000001',
+        quote: 2500,
+        complaint: ComplaintStatus.open,
+        refund: RefundStatus.none,
+      ),
+    ];
+  }();
+
+  @override
+  Future<List<AdminRequest>> requests({int days = 7}) async => [
+    for (final r in sampleRequests)
+      if (r.stage.open ||
+          DateTime.now().difference(r.createdAt) < Duration(days: days))
+        r,
+  ];
 }

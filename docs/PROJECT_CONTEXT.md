@@ -36,6 +36,28 @@ Every screen is tested against one question: does this make the owner do more?
 
 Gates: 90 verified providers live before Phase 2; 300 paid jobs in the pilot before Phase 3.
 
+## Admin: live requests, side by side, search (24 Nov 2026)
+
+The three admin pieces left over from the design are built:
+- **Live requests** (sidebar under Work; Requests tab on phones). Every open request
+  plus the last 7 days, refreshed every 30 seconds, stuck ones first. Filters: Open,
+  Stuck (nobody has it, or no answer for 5 minutes), Last 7 days. Laptop: a table with
+  the chosen request open beside it (what the owner said, area, car, price, the
+  mechanic with a Call button, the owner's number if they gave one, any complaint with
+  a button to Complaints). Phone: cards, a tap opens the request on its own page.
+  The overview shows the table on laptops and a "requests need a look" task everywhere.
+- **Side by side** on Mechanics & garages (laptop): the queue on the left with
+  "x of y" checks, the chosen listing open on the right with documents and checks.
+- **Search** (top right on laptops, magnifier on phones): names, areas, phone numbers
+  in any form (0712…, +254712…, last 4 digits) and request references, across
+  mechanics and garages (any status), parts shops and requests. A tap opens the item.
+Database: `20261124000000_admin_requests.sql` adds `admin_requests(days)`, admins only,
+read only, with the stage worked out on the server clock; own SQL test
+`admin_requests_test.sql`. **Not yet applied live.** Until it is, the overview still
+loads but Live requests shows "Could not load". 73 Flutter tests, twelve SQL test files.
+Built in a cloud session: Flutter there is newer and flags `material.dart` as
+deprecated in every file (info only, not from this change).
+
 ## Portal redesign (20 Nov 2026, night)
 
 The owner found the screens plain and hard to use, so every portal was redesigned
@@ -50,7 +72,7 @@ in the chat). Order agreed: admin console first, then the owner app, garage and 
   whose buttons jump to the right section.
 - Lists have a filter and the add button in one row, cards show initials and
   "x of y checks", and empty lists say what will appear there.
-Not built from the design yet: live requests table, side-by-side detail view, search.
+Live requests, side-by-side view and search were added on 24 Nov (see above).
 
 **Owner app restyled** (same flows and rules, no new steps):
 - Home: a live "N checked mechanics free near you" pill in the hero (from the nearby
