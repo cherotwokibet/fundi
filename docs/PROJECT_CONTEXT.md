@@ -53,8 +53,10 @@ The three admin pieces left over from the design are built:
   mechanics and garages (any status), parts shops and requests. A tap opens the item.
 Database: `20261124000000_admin_requests.sql` adds `admin_requests(days)`, admins only,
 read only, with the stage worked out on the server clock; own SQL test
-`admin_requests_test.sql`. **Not yet applied live.** Until it is, the overview still
-loads but Live requests shows "Could not load". 73 Flutter tests, twelve SQL test files.
+`admin_requests_test.sql`. Applied live on 25 Nov 2026 (from the SQL editor, so it is
+not in the migration history); checked there: admins only, signed-out and non-admins
+refused. Deployed to fundi-test.netlify.app the same day. 73 Flutter tests, twelve SQL
+test files.
 Built in a cloud session: Flutter there is newer and flags `material.dart` as
 deprecated in every file (info only, not from this change).
 
