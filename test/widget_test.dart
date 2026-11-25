@@ -707,13 +707,26 @@ void main() {
       await tester.enterText(find.byKey(const Key('phone')), '0712 345 678');
       await tester.tap(find.byKey(const Key('send-code')));
       await tester.pumpAndSettle();
-      expect(find.textContaining('+254712345678'), findsOneWidget);
-      await tester.enterText(find.byKey(const Key('code')), '000000');
+      expect(find.text('Check your phone'), findsOneWidget);
+      expect(find.textContaining('+254 712 345 678'), findsOneWidget);
+      // Too short: says so, without asking the server.
+      await tester.enterText(find.byKey(const Key('code')), '123');
       await tester.tap(find.byKey(const Key('verify-code')));
       await tester.pumpAndSettle();
+      expect(find.text('Enter all 6 digits of the code.'), findsOneWidget);
+      // A wrong code is tried as soon as all 6 digits are in.
+      await tester.enterText(find.byKey(const Key('code')), '000000');
+      await tester.pumpAndSettle();
       expect(find.text('That code is not correct.'), findsOneWidget);
+      // A new code only after a wait.
+      expect(find.byKey(const Key('resend-code')), findsNothing);
+      await tester.pump(const Duration(seconds: 31));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('resend-code')));
+      await tester.pumpAndSettle();
+      expect(find.text('New code sent.'), findsOneWidget);
+      expect(find.byKey(const Key('resend-wait')), findsOneWidget);
       await tester.enterText(find.byKey(const Key('code')), '123456');
-      await tester.tap(find.byKey(const Key('verify-code')));
       await tester.pumpAndSettle();
 
       expect(find.text('This number is not registered'), findsOneWidget);
@@ -2151,6 +2164,6 @@ Future<void> signIn(WidgetTester tester, String phone) async {
     find.byKey(const Key('code')),
     SampleAccountRepository.sampleCode,
   );
-  await tester.tap(find.byKey(const Key('verify-code')));
+  // A full code signs in by itself.
   await tester.pumpAndSettle();
 }

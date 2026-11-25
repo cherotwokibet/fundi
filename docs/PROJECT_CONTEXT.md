@@ -36,6 +36,16 @@ Every screen is tested against one question: does this make the owner do more?
 
 Gates: 90 verified providers live before Phase 2; 300 paid jobs in the pilot before Phase 3.
 
+## Trade sign-in redesigned (25 Nov 2026)
+
+The sign-in for /admin, /garage and /parts (owners never see it). Laptop: a forest panel
+with what the portal is for, the form beside it. Phone: a short forest header, then the
+form. Phone number with a fixed KE +254 in front (0712…, 712… and +254712… all work);
+Enter sends. Then "Check your phone" with the number spelled out, one large code box
+(not six split boxes, which are harder with screen readers and code autofill), sign-in
+as soon as 6 digits are in, "Use a different number", and a new code after 30 seconds.
+Errors show at the field. Same rules as before; no extra steps.
+
 ## Admin: live requests, side by side, search (24 Nov 2026)
 
 The three admin pieces left over from the design are built:

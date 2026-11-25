@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -333,137 +335,591 @@ class _SignInScreen extends ConsumerStatefulWidget {
   ConsumerState<_SignInScreen> createState() => _SignInState();
 }
 
+/// What each portal's sign-in says about it, on the forest panel.
+({String badge, String headline, List<(IconData, String)> points}) _pitch(
+  Portal p,
+) => switch (p) {
+  Portal.admin => (
+    badge: 'Admin',
+    headline: 'Run the Fundi network.',
+    points: [
+      (
+        Icons.verified_user_outlined,
+        'Check and approve mechanics, garages and parts shops',
+      ),
+      (Icons.forum_outlined, 'See every request as it happens'),
+      (Icons.flag_outlined, 'Decide complaints and refunds'),
+    ],
+  ),
+  Portal.parts => (
+    badge: 'Parts',
+    headline: 'Sell parts to checked mechanics.',
+    points: [
+      (
+        Icons.storefront_outlined,
+        'Orders come only from approved garages and mechanics',
+      ),
+      (Icons.inventory_2_outlined, 'Confirm, get it ready, hand it over'),
+      (Icons.notifications_none, 'New orders show at once, with a count'),
+    ],
+  ),
+  _ => (
+    badge: 'Garages',
+    headline: 'Jobs from car owners near you.',
+    points: [
+      (Icons.mic_none, "Requests with the owner's note, photo and voice note"),
+      (
+        Icons.receipt_long_outlined,
+        'Send your price, the owner approves in one tap',
+      ),
+      (Icons.build_outlined, 'Order spare parts from checked shops'),
+    ],
+  ),
+};
+
+/// +254712345678 → +254 712 345 678
+String _spaced(String phone) {
+  final d = phone.replaceAll(RegExp(r'\D'), '');
+  if (d.length != 12) return phone;
+  return '+${d.substring(0, 3)} ${d.substring(3, 6)} ${d.substring(6, 9)} ${d.substring(9)}';
+}
+
 class _SignInState extends ConsumerState<_SignInScreen> {
+  static const resendAfter = 30;
+
   final phone = TextEditingController();
   final code = TextEditingController();
+  final codeFocus = FocusNode();
   String? sentTo;
-  String? error;
+  String? phoneError;
+  String? codeError;
+  String? notice;
   bool busy = false;
+  int wait = 0;
+  Timer? ticker;
 
   @override
   void dispose() {
+    ticker?.cancel();
     phone.dispose();
     code.dispose();
+    codeFocus.dispose();
     super.dispose();
   }
 
-  Future<void> _run(Future<void> Function() action) async {
+  void _startWait() {
+    ticker?.cancel();
+    wait = resendAfter;
+    ticker = Timer.periodic(const Duration(seconds: 1), (t) {
+      if (!mounted) return t.cancel();
+      setState(() => wait--);
+      if (wait <= 0) t.cancel();
+    });
+  }
+
+  Future<void> _send({bool again = false}) async {
+    final normal = normalizeKenyanPhone(phone.text);
+    if (normal == null) {
+      setState(
+        () => phoneError =
+            'Enter a Kenyan mobile number, for example 0712 345 678.',
+      );
+      return;
+    }
     setState(() {
       busy = true;
-      error = null;
+      phoneError = null;
+      codeError = null;
+      notice = null;
     });
     try {
-      await action();
+      await ref.read(accountProvider).sendCode(normal);
+      if (!mounted) return;
+      setState(() {
+        sentTo = normal;
+        code.clear();
+        if (again) notice = 'New code sent.';
+      });
+      _startWait();
+      codeFocus.requestFocus();
     } catch (e) {
-      if (mounted) setState(() => error = _friendly(e));
+      if (mounted) {
+        setState(() {
+          if (sentTo == null) {
+            phoneError = _friendly(e);
+          } else {
+            codeError = _friendly(e);
+          }
+        });
+      }
     } finally {
       if (mounted) setState(() => busy = false);
     }
   }
 
-  Future<void> _send() => _run(() async {
-    final normal = normalizeKenyanPhone(phone.text);
-    if (normal == null) {
-      throw AccountException(
-        'Enter a Kenyan mobile number, for example 0712 345 678.',
-      );
+  Future<void> _verify() async {
+    if (busy) return;
+    final entered = code.text.trim();
+    if (entered.length != 6) {
+      setState(() => codeError = 'Enter all 6 digits of the code.');
+      return;
     }
-    await ref.read(accountProvider).sendCode(normal);
-    if (mounted) setState(() => sentTo = normal);
-  });
+    setState(() {
+      busy = true;
+      codeError = null;
+      notice = null;
+    });
+    try {
+      await ref.read(accountProvider).verifyCode(sentTo!, entered);
+      ref.read(accountVersionProvider.notifier).bump();
+    } catch (e) {
+      if (mounted) setState(() => codeError = _friendly(e));
+    } finally {
+      if (mounted) setState(() => busy = false);
+    }
+  }
 
-  Future<void> _verify() => _run(() async {
-    await ref.read(accountProvider).verifyCode(sentTo!, code.text.trim());
-    ref.read(accountVersionProvider.notifier).bump();
-  });
+  void _changeNumber() {
+    ticker?.cancel();
+    setState(() {
+      sentTo = null;
+      code.clear();
+      codeError = null;
+      notice = null;
+      wait = 0;
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
-    final sample = ref.watch(sampleModeProvider);
-    return Scaffold(
-      appBar: AppBar(title: Text(_signInTitle(widget.portal))),
-      body: ContentWidth(
-        child: ListView(
-          padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
+    final wide = MediaQuery.sizeOf(context).width >= 900;
+    final form = Padding(
+      padding: EdgeInsets.fromLTRB(24, wide ? 40 : 28, 24, 32),
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 400),
+        child: AutofillGroup(
+          child: AnimatedSwitcher(
+            duration: const Duration(milliseconds: 200),
+            child: sentTo == null ? _phoneStep() : _codeStep(),
+          ),
+        ),
+      ),
+    );
+    if (wide) {
+      return Scaffold(
+        backgroundColor: Colors.white,
+        body: Row(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            const Text(
-              'Sign in to your work account',
-              style: TextStyle(fontSize: 22, fontWeight: FontWeight.w700),
+            Expanded(flex: 5, child: _Panel(widget.portal)),
+            Expanded(
+              flex: 6,
+              child: Center(child: SingleChildScrollView(child: form)),
             ),
-            const SizedBox(height: 6),
-            Text(
-              widget.portal == Portal.admin
-                  ? 'For the Fundi team only. Sign in with your team number.'
-                  : 'Our team adds every mechanic, garage and parts shop after checking them. '
-                        'Sign in with the number you gave our team.',
-            ),
-            const SizedBox(height: 20),
-            if (sentTo == null) ...[
-              TextField(
-                key: const Key('phone'),
-                controller: phone,
-                keyboardType: TextInputType.phone,
-                autofillHints: const [AutofillHints.telephoneNumber],
-                decoration: const InputDecoration(
-                  labelText: 'Your phone number',
-                  hintText: '0712 345 678',
-                  border: OutlineInputBorder(),
-                ),
-              ),
-              const SizedBox(height: 16),
-              FilledButton(
-                key: const Key('send-code'),
-                onPressed: busy ? null : _send,
-                child: const Text('Send me a code'),
-              ),
-            ] else ...[
-              Text('Enter the 6-digit code sent to $sentTo'),
-              if (sample)
-                Padding(
-                  padding: const EdgeInsets.only(top: 6),
-                  child: Text(
-                    'Sample mode: no SMS is sent. Use 123456. '
-                    '${_sampleNumber(widget.portal)}',
-                    style: const TextStyle(fontSize: 13),
-                  ),
-                ),
-              const SizedBox(height: 12),
-              TextField(
-                key: const Key('code'),
-                controller: code,
-                keyboardType: TextInputType.number,
-                maxLength: 6,
-                inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-                autofillHints: const [AutofillHints.oneTimeCode],
-                decoration: const InputDecoration(
-                  labelText: 'Code',
-                  border: OutlineInputBorder(),
-                ),
-              ),
-              const SizedBox(height: 8),
-              FilledButton(
-                key: const Key('verify-code'),
-                onPressed: busy ? null : _verify,
-                child: const Text('Continue'),
-              ),
-              TextButton(
-                onPressed: busy ? null : () => setState(() => sentTo = null),
-                child: const Text('Use a different number'),
-              ),
-            ],
-            if (error != null)
-              Padding(
-                padding: const EdgeInsets.only(top: 12),
-                child: Text(
-                  error!,
-                  style: TextStyle(color: Theme.of(context).colorScheme.error),
-                ),
-              ),
+          ],
+        ),
+      );
+    }
+    return Scaffold(
+      backgroundColor: Colors.white,
+      body: SafeArea(
+        top: false,
+        child: ListView(
+          padding: EdgeInsets.zero,
+          children: [
+            _Panel(widget.portal, compact: true),
+            Center(child: form),
           ],
         ),
       ),
     );
   }
+
+  static InputDecoration _box({String? hint, String? error, Widget? prefix}) =>
+      InputDecoration(
+        hintText: hint,
+        errorText: error,
+        errorMaxLines: 3,
+        counterText: '',
+        prefixIcon: prefix,
+        filled: true,
+        fillColor: const Color(0xFFF7F8F5),
+        contentPadding: const EdgeInsets.symmetric(
+          horizontal: 16,
+          vertical: 16,
+        ),
+        border: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(14),
+          borderSide: const BorderSide(color: hairline),
+        ),
+        enabledBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(14),
+          borderSide: const BorderSide(color: hairline),
+        ),
+        focusedBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(14),
+          borderSide: const BorderSide(color: forest, width: 2),
+        ),
+      );
+
+  Widget _button(Key key, String label, VoidCallback onPressed) => SizedBox(
+    height: 54,
+    child: FilledButton(
+      key: key,
+      style: FilledButton.styleFrom(
+        backgroundColor: forest,
+        disabledBackgroundColor: forest.withValues(alpha: 0.7),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+      ),
+      onPressed: busy ? null : onPressed,
+      child: busy
+          ? const SizedBox(
+              width: 22,
+              height: 22,
+              child: CircularProgressIndicator(
+                strokeWidth: 2.5,
+                color: Colors.white,
+              ),
+            )
+          : Text(label),
+    ),
+  );
+
+  static const _label = TextStyle(
+    fontSize: 14,
+    fontWeight: FontWeight.w600,
+    color: ink,
+  );
+
+  Widget _phoneStep() {
+    return Column(
+      key: const ValueKey('phone-step'),
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Text(
+          _signInTitle(widget.portal),
+          style: const TextStyle(
+            fontSize: 13,
+            fontWeight: FontWeight.w700,
+            letterSpacing: 0.4,
+            color: Color(0xFF135C37),
+          ),
+        ),
+        const SizedBox(height: 6),
+        Text('Sign in', style: heading(32)),
+        const SizedBox(height: 10),
+        Text(
+          widget.portal == Portal.admin
+              ? 'For the Fundi team only. Sign in with your team number.'
+              : 'Our team adds every mechanic, garage and parts shop after checking them. '
+                    'Sign in with the number you gave our team.',
+          style: const TextStyle(fontSize: 15, color: muted, height: 1.45),
+        ),
+        const SizedBox(height: 28),
+        const Text('Phone number', style: _label),
+        const SizedBox(height: 8),
+        TextField(
+          key: const Key('phone'),
+          controller: phone,
+          autofocus: true,
+          keyboardType: TextInputType.phone,
+          textInputAction: TextInputAction.go,
+          autofillHints: const [AutofillHints.telephoneNumber],
+          inputFormatters: [
+            FilteringTextInputFormatter.allow(RegExp(r'[0-9+ ]')),
+            LengthLimitingTextInputFormatter(16),
+          ],
+          style: const TextStyle(fontSize: 18, letterSpacing: 0.5),
+          onChanged: (_) {
+            if (phoneError != null) setState(() => phoneError = null);
+          },
+          onSubmitted: (_) => _send(),
+          decoration: _box(
+            hint: '712 345 678',
+            error: phoneError,
+            prefix: Container(
+              margin: const EdgeInsets.only(left: 6, right: 10),
+              padding: const EdgeInsets.symmetric(horizontal: 10),
+              decoration: const BoxDecoration(
+                border: Border(right: BorderSide(color: hairline)),
+              ),
+              child: const Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    'KE',
+                    style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w700,
+                      color: muted,
+                    ),
+                  ),
+                  SizedBox(width: 6),
+                  Text('+254', style: TextStyle(fontSize: 18, color: ink)),
+                ],
+              ),
+            ),
+          ),
+        ),
+        const SizedBox(height: 8),
+        const Text(
+          '0712…, 712… and +254712… all work.',
+          style: TextStyle(fontSize: 13, color: muted),
+        ),
+        const SizedBox(height: 22),
+        _button(const Key('send-code'), 'Send me a code', _send),
+        const SizedBox(height: 22),
+        const _Assurance(),
+      ],
+    );
+  }
+
+  Widget _codeStep() {
+    final sample = ref.watch(sampleModeProvider);
+    return Column(
+      key: const ValueKey('code-step'),
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Align(
+          alignment: Alignment.centerLeft,
+          child: TextButton.icon(
+            key: const Key('change-number'),
+            style: TextButton.styleFrom(
+              padding: const EdgeInsets.symmetric(horizontal: 4),
+              minimumSize: const Size(0, 40),
+            ),
+            onPressed: busy ? null : _changeNumber,
+            icon: const Icon(Icons.arrow_back, size: 18),
+            label: const Text('Use a different number'),
+          ),
+        ),
+        const SizedBox(height: 8),
+        Text('Check your phone', style: heading(32)),
+        const SizedBox(height: 10),
+        Text.rich(
+          TextSpan(
+            text: 'We sent a 6-digit code to ',
+            children: [
+              TextSpan(
+                text: _spaced(sentTo!),
+                style: const TextStyle(fontWeight: FontWeight.w700, color: ink),
+              ),
+              const TextSpan(text: '.'),
+            ],
+          ),
+          style: const TextStyle(fontSize: 15, color: muted, height: 1.45),
+        ),
+        if (sample) ...[
+          const SizedBox(height: 14),
+          Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: warnFill,
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: warnLine),
+            ),
+            child: Text(
+              'Sample mode: no SMS is sent. Use 123456. '
+              '${_sampleNumber(widget.portal)}',
+              style: const TextStyle(fontSize: 13, color: warnInk),
+            ),
+          ),
+        ],
+        const SizedBox(height: 26),
+        const Text('Code', style: _label),
+        const SizedBox(height: 8),
+        TextField(
+          key: const Key('code'),
+          controller: code,
+          focusNode: codeFocus,
+          autofocus: true,
+          keyboardType: TextInputType.number,
+          textInputAction: TextInputAction.done,
+          maxLength: 6,
+          textAlign: TextAlign.center,
+          inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+          autofillHints: const [AutofillHints.oneTimeCode],
+          style: const TextStyle(
+            fontSize: 28,
+            fontWeight: FontWeight.w700,
+            letterSpacing: 14,
+            fontFeatures: [FontFeature.tabularFigures()],
+          ),
+          onChanged: (v) {
+            if (codeError != null) setState(() => codeError = null);
+            // Pasted or filled in from the text: sign in at once.
+            if (v.length == 6) _verify();
+          },
+          onSubmitted: (_) => _verify(),
+          decoration: _box(hint: '······', error: codeError),
+        ),
+        if (notice != null) ...[
+          const SizedBox(height: 8),
+          Row(
+            children: [
+              const Icon(
+                Icons.check_circle,
+                size: 16,
+                color: Color(0xFF135C37),
+              ),
+              const SizedBox(width: 6),
+              Text(
+                notice!,
+                style: const TextStyle(fontSize: 13, color: Color(0xFF135C37)),
+              ),
+            ],
+          ),
+        ],
+        const SizedBox(height: 22),
+        _button(const Key('verify-code'), 'Sign in', _verify),
+        const SizedBox(height: 14),
+        Center(
+          child: wait > 0
+              ? Text(
+                  "Didn't get it? You can ask for a new code in ${wait}s.",
+                  key: const Key('resend-wait'),
+                  style: const TextStyle(fontSize: 13, color: muted),
+                )
+              : TextButton(
+                  key: const Key('resend-code'),
+                  onPressed: busy ? null : () => _send(again: true),
+                  child: const Text("Didn't get it? Send a new code"),
+                ),
+        ),
+      ],
+    );
+  }
+}
+
+/// The forest side: whose portal this is and what it is for.
+class _Panel extends StatelessWidget {
+  const _Panel(this.portal, {this.compact = false});
+  final Portal portal;
+  final bool compact;
+
+  @override
+  Widget build(BuildContext context) {
+    final p = _pitch(portal);
+    final brand = Row(
+      children: [
+        Text('fundi', style: heading(compact ? 22 : 26, color: Colors.white)),
+        const SizedBox(width: 10),
+        Flexible(
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 3),
+            decoration: BoxDecoration(
+              color: lime.withValues(alpha: 0.16),
+              borderRadius: BorderRadius.circular(99),
+            ),
+            child: Text(
+              p.badge,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.w700,
+                color: lime,
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
+    if (compact) {
+      return Container(
+        color: forest,
+        padding: EdgeInsets.fromLTRB(
+          24,
+          MediaQuery.paddingOf(context).top + 20,
+          24,
+          24,
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            brand,
+            const SizedBox(height: 18),
+            Text(p.headline, style: heading(24, color: Colors.white)),
+          ],
+        ),
+      );
+    }
+    return Container(
+      color: forest,
+      padding: const EdgeInsets.fromLTRB(48, 40, 48, 40),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          brand,
+          const Spacer(),
+          ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 460),
+            child: Text(p.headline, style: heading(44, color: Colors.white)),
+          ),
+          const SizedBox(height: 28),
+          for (final (icon, text) in p.points)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 16),
+              child: Row(
+                children: [
+                  Container(
+                    width: 36,
+                    height: 36,
+                    decoration: BoxDecoration(
+                      color: Colors.white.withValues(alpha: 0.08),
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: Icon(icon, size: 18, color: lime),
+                  ),
+                  const SizedBox(width: 14),
+                  Expanded(
+                    child: Text(
+                      text,
+                      style: const TextStyle(
+                        fontSize: 15,
+                        color: Color(0xFFDCE6E0),
+                        height: 1.4,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          const Spacer(),
+          const Text(
+            'Only people the Fundi team has checked and added can sign in.',
+            style: TextStyle(fontSize: 13, color: Color(0xFF8FA59A)),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _Assurance extends StatelessWidget {
+  const _Assurance();
+
+  @override
+  Widget build(BuildContext context) => Container(
+    padding: const EdgeInsets.all(14),
+    decoration: BoxDecoration(
+      color: const Color(0xFFF1F6EC),
+      borderRadius: BorderRadius.circular(12),
+    ),
+    child: const Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Icon(Icons.lock_outline, size: 18, color: forest),
+        SizedBox(width: 10),
+        Expanded(
+          child: Text(
+            'We text you a 6-digit code, so there is no password to remember. '
+            'Fundi never asks for your M-Pesa PIN.',
+            style: TextStyle(fontSize: 13, color: ink, height: 1.4),
+          ),
+        ),
+      ],
+    ),
+  );
 }
 
 // ---------------------------------------------------------------------------
